@@ -283,9 +283,12 @@ Built and verified so far (each gate below is green — see "Build & test"):
   eyeballed against the circle. A 5th app tab, "Pole-Zero", makes it
   reachable in the running app. 38 new tests (24 `sd_graph`, 8
   `sd_render`, 5 `sd_ui`, 1 the app).
-  Not implemented: the rest of §5.11's analysis plots (Bode, Nyquist,
-  spectrogram, ...) and hierarchical/subsystem-aware analysis (the
-  same scope cut Mason's formula itself already documents).
+  Not implemented at the time: the rest of §5.11's analysis plots (Bode
+  and Nyquist landed in later checkpoints — see below; a spectrogram,
+  which needs an actual sampled signal to analyze rather than only a
+  symbolic transfer function, remains unbuilt) and hierarchical/
+  subsystem-aware analysis (the same scope cut Mason's formula itself
+  already documents).
 - **§5.11 — Bode plot, evaluating that same H(z) around the unit
   circle instead of solving it for roots.** `sd_graph` gained
   `computeBodePlot`: magnitude (dB) and *unwrapped* phase (degrees) of
@@ -449,11 +452,38 @@ Built and verified so far (each gate below is green — see "Build & test"):
   4 new `sd_export` tests (real, `runAsync`-wrapped, decoding the
   output back to confirm actual pixel dimensions — not just "a file
   came out"), 6 new `sd_ui` tests, 1 new app test.
+- **§5.11 — Nyquist plot, the third and last of this project's "big
+  three" transfer-function analysis views (pole-zero, Bode, Nyquist).**
+  `sd_graph` gained `computeNyquistPlot`: `H(e^{jω})` traced directly in
+  the complex plane over the *full* closed contour (`ω` from `-π` to
+  `π`), unlike `computeBodePlot`'s `[0, π]` half — a Nyquist plot is
+  conventionally the closed curve itself, so stopping at DC would only
+  draw half of it. Exploits conjugate symmetry (`H(e^{-jω})` is the
+  complex conjugate of `H(e^{jω})` for any real-coefficient transfer
+  function — every one this project's stencils can produce) to get the
+  `ω < 0` half for free by mirroring the already-computed `ω ≥ 0` half,
+  rather than evaluating `H` at twice as many points; `-π` itself is
+  omitted from the result (it's the same physical point on the unit
+  circle as `+π`, already present, so including both would duplicate
+  rather than close the contour). Verified with the same style of
+  hand-derivable cases as Bode (a pure gain: every point collapses to
+  one; a pure delay: the whole contour lies exactly on the unit circle)
+  plus a direct symmetry check and the same biquad DC/Nyquist hand
+  derivation Bode's own tests use. `sd_render` gained
+  `NyquistPlotPainter` (axes, the traced closed contour, and the
+  classical `-1` reference point marked for orientation — this project
+  doesn't implement Nyquist's own encirclement-counting stability
+  criterion, since §5.11's pole-zero plot already gives a simpler,
+  sufficient stability readout for a discrete-time system: every pole
+  strictly inside the unit circle); `sd_ui`'s new `NyquistPanel` mirrors
+  `BodePanel`'s message-state pattern exactly. Wired as the app's 7th
+  tab. 8 new `sd_graph` tests, 5 new `sd_render` tests, 5 new `sd_ui`
+  tests, 1 new app test.
 
 **Next, if this continues**: the 5 native pen plugins (6/7), the rest
-of vector export — EPS/print (10) —, the rest of §5.11's analysis
-plots, and polish (11) are all **not started**, and §5.5/§5.7/§5.8
-remain thin. Given the true scope of §0-§15 (a
+of vector export — EPS/print (10) —, §5.11's spectrogram plot, and
+polish (11) are all **not started**, and §5.5/§5.7/§5.8 remain thin.
+Given the true scope of §0-§15 (a
 production, cross-platform, multi-native-plugin app), these were not
 attempted in the interest of not shipping shallow/fake versions of
 them — see "What's not built" below.
@@ -472,8 +502,9 @@ see it validated, see its transfer function — all for real, nothing
 faked. Concretely still missing:
 
 - **The rest of the Ribbon/docking UI (§10, Phase 5).** A real tabbed
-  `Ribbon` (Home/Insert, see above) now drives Undo/Redo/Clipboard/
-  Tools/Zoom and the equation dialog — what's still missing is a
+  `Ribbon` (Home/Insert/Export, see above) now drives Undo/Redo/File/
+  Clipboard/Tools/Zoom and the equation/PDF/PNG dialogs — what's still
+  missing is a
   gallery-style stencil picker on the ribbon itself (the sidebar
   palette covers this today), more tabs as more features need ribbon
   entry points, and any panel docking/undocking (still a fixed
@@ -491,8 +522,11 @@ faked. Concretely still missing:
   cascade are generated (see above) but lattice/parallel/wave-digital/
   comb/CIC/state-space forms aren't; §5.7 (comms/modulation — mixer,
   NCO, PLL, Costas loop, ...) and §5.8 (adaptive/statistical — LMS/RLS,
-  ...) are entirely unimplemented. §5.11's pole-zero and Bode plots are
-  done (see above) — Nyquist and spectrogram plots aren't. None of the filter
+  ...) are entirely unimplemented. §5.11's pole-zero, Bode, and Nyquist
+  plots are all done (see above) — only a spectrogram plot isn't (and,
+  unlike the other three, needs an actual sampled signal to analyze
+  rather than only a symbolic transfer function, so it's a different
+  shape of feature, not just "one more plot"). None of the filter
   generators have a palette/drag-to-canvas entry point yet either —
   they're called directly (as the tests do); wiring one into
   `StencilPalette`/`StencilCanvasArea` (which only knows single-block
@@ -526,12 +560,12 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 ```
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
-/packages/sd_graph         # ✅ Phase 4+8+5.11 — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode
+/packages/sd_graph         # ✅ Phase 4+8+5.11 — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist
 /packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR/biquad/cascade generators
-/packages/sd_render        # ✅ Phase 2 (+connectors) — scene, pan/zoom, selection, port-to-port wiring
+/packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
-/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF/PNG-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode
+/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF/PNG-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode/Nyquist
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
 /packages/sd_export        # ✅ Phase 10 (partial) — TikZ+PDF+PNG export (PDF/PNG have ribbon UI entry points); EPS/print pending
 /packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app
@@ -872,6 +906,16 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   interactions. The seam is the same shape as `ExportPdfDialog.exportPdf`
   but for a different underlying reason; see the standalone
   `isolate-run-testwidgets-hang` memory for the fuller comparison.
+- **`computeNyquistPlot` computes only the `ω ≥ 0` half of the contour
+  and mirrors it for `ω < 0`, rather than evaluating `H` at points
+  spanning the full `[-π, π]` range directly.** Every transfer function
+  this project's stencils can produce has real coefficients (gains,
+  delay counts, ...), and `H(e^{-jω})` is always the complex conjugate
+  of `H(e^{jω})` for such a function — a standard result, not specific
+  to this codebase — so computing the negative half is free once the
+  non-negative half (already needed, and already computed identically
+  to `computeBodePlot`'s own sweep) exists. Halves the number of
+  `Expr`/`Complex` evaluations for the same visual result.
 
 ## Build & test
 

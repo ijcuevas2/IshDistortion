@@ -37,6 +37,19 @@ void main() {
     expect(find.text('Bode'), findsWidgets);
   });
 
+  testWidgets('the Nyquist tab is reachable without error', (tester) async {
+    await tester.pumpWidget(const SigmaDrawApp());
+
+    await tester.tap(find.text('Nyquist'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    // Same "findsWidgets, not findsOneWidget" reasoning as the Pole-Zero/
+    // Bode tabs above: NyquistPanel's own in-body heading is a second
+    // match once its message branch doesn't apply.
+    expect(find.text('Nyquist'), findsWidgets);
+  });
+
   testWidgets('the Insert ribbon opens the equation dialog', (tester) async {
     await tester.pumpWidget(const SigmaDrawApp());
 

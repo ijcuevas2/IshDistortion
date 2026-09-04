@@ -5,9 +5,9 @@
 /// `sd_latex`'s/`sd_export`'s compile pipelines to the document for the
 /// first time, the stencil palette (search + drag), a drop-to-place-and-
 /// connect-and-draw canvas wrapper, the element tree, the property
-/// inspector, a live Problems panel, and live H(z)/pole-zero/Bode
-/// readouts (§4/§5.11's semantic-graph analysis, surfaced in the UI).
-/// Docking and the status bar remain unbuilt.
+/// inspector, a live Problems panel, and live H(z)/pole-zero/Bode/
+/// Nyquist readouts (§4/§5.11's semantic-graph analysis, surfaced in the
+/// UI). Docking and the status bar remain unbuilt.
 library;
 
 export 'src/bode_panel.dart';
@@ -17,6 +17,7 @@ export 'src/export_pdf_dialog.dart';
 export 'src/export_png_dialog.dart';
 export 'src/insert_latex_dialog.dart';
 export 'src/inspector_panel.dart';
+export 'src/nyquist_panel.dart';
 export 'src/open_document_dialog.dart';
 export 'src/pole_zero_panel.dart';
 export 'src/problems_panel.dart';

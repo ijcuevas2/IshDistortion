@@ -99,6 +99,77 @@ List<BodePoint>? computeBodePlot(
 
 double _log10(double v) => math.log(v) / math.ln10;
 
+/// One point of a Nyquist plot (§5.11's "Analysis Plot — Nyquist"): the
+/// transfer function's response at one normalized angular frequency,
+/// plotted directly in the complex plane rather than split into
+/// magnitude/phase the way [BodePoint] is.
+class NyquistPoint {
+  const NyquistPoint({required this.omega, required this.re, required this.im});
+
+  /// Normalized angular frequency, radians/sample, in `[-pi, pi]` — the
+  /// *full* closed contour, unlike [computeBodePlot]'s `[0, pi]` half
+  /// (see [computeNyquistPlot]'s own doc comment on why).
+  final double omega;
+
+  final double re;
+  final double im;
+}
+
+/// Computes a Nyquist plot (§5.11): `H(e^{j*omega})` plotted directly in
+/// the complex plane, swept over the *full* closed contour (`omega` from
+/// `-pi` to `pi`) — unlike [computeBodePlot], which only needs `[0, pi]`
+/// since it plots magnitude/phase as separate curves against `omega`, a
+/// Nyquist plot is conventionally the closed curve itself, and stopping
+/// at `omega = 0` would draw only half of it.
+///
+/// Exploits conjugate symmetry — `H(e^{-j*omega})` is the complex
+/// conjugate of `H(e^{j*omega})` for any transfer function with real
+/// coefficients, true of every one this project's stencils can produce —
+/// to get the `omega < 0` half for free by mirroring the `omega >= 0`
+/// half (computed exactly as [computeBodePlot] computes its own sweep)
+/// rather than evaluating `H` at twice as many points. The returned list
+/// is ordered by increasing `omega`, tracing the closed contour
+/// continuously from just past `-pi` back around to `pi` — `-pi` itself
+/// is omitted (it's the same physical point on the unit circle as `pi`,
+/// already the list's last entry, so including both would duplicate
+/// rather than extend the contour).
+///
+/// [bindings]/return-`null` semantics are identical to [computeBodePlot].
+List<NyquistPoint>? computeNyquistPlot(
+  Expr h, {
+  Map<String, num> bindings = const {},
+  int pointCount = 200,
+}) {
+  if (pointCount < 2) {
+    throw ArgumentError.value(pointCount, 'pointCount', 'must be at least 2');
+  }
+  final rational = rationalPolynomials(h, bindings);
+  if (rational == null) return null;
+
+  final nonNegativeHalf = <NyquistPoint>[];
+  for (var i = 0; i < pointCount; i++) {
+    final omega = math.pi * i / (pointCount - 1);
+    final z = Complex(math.cos(omega), math.sin(omega));
+    final response =
+        _evaluateZInversePolynomial(rational.numerator, z) /
+        _evaluateZInversePolynomial(rational.denominator, z);
+    nonNegativeHalf.add(
+      NyquistPoint(omega: omega, re: response.re, im: response.im),
+    );
+  }
+
+  // Mirrors every point strictly between omega=0 and omega=pi (both
+  // already present in nonNegativeHalf, and each other's own conjugate
+  // partner for a real-coefficient system, so re-mirroring either would
+  // duplicate rather than extend the contour).
+  final negativeHalf = [
+    for (final p in nonNegativeHalf.sublist(1, pointCount - 1).reversed)
+      NyquistPoint(omega: -p.omega, re: p.re, im: -p.im),
+  ];
+
+  return [...negativeHalf, ...nonNegativeHalf];
+}
+
 /// Evaluates a `z^-1`-power sparse polynomial — as [rationalPolynomials]
 /// produces: a `Map` from power `k` to coefficient, meaning the term
 /// `coefficient * z^-k` — at a concrete complex [z].

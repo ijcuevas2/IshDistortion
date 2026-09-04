@@ -4,13 +4,15 @@
 /// Tarjan strongly-connected-components-based algebraic-loop detection,
 /// Mason's gain formula for a symbolic transfer function H(z), (§5.11)
 /// pole-zero computation from that H(z) via Durand-Kerner polynomial
-/// root-finding, and (§5.11) a Bode magnitude/phase plot from the same
-/// H(z) evaluated around the unit circle.
+/// root-finding, and (§5.11) Bode magnitude/phase and Nyquist
+/// complex-plane plots from the same H(z) evaluated around the unit
+/// circle.
 ///
 /// Hierarchical/subsystem support is flagged (`Block.isSubsystem`) but not
 /// implemented — see that field's doc comment. Netlist-driven simulation
-/// and the rest of §5.11's analysis plots (Nyquist, spectrogram, ...) are
-/// not implemented.
+/// and the rest of §5.11's analysis plots (a spectrogram, which needs an
+/// actual sampled signal to analyze rather than only a symbolic transfer
+/// function) are not implemented.
 library;
 
 export 'src/algebraic_loops.dart';
