@@ -30,13 +30,13 @@ const _nonRenderingContainers = {
 
 /// Builds the retained [SceneNode] tree for [document].
 ///
-/// Known Phase 2 scope cuts (all namespace/element-driven, so gracefully
+/// Known scope cuts (all namespace/element-driven, so gracefully
 /// forward-compatible — nothing crashes, the content is just not yet
-/// painted): `marker-start`/`marker-end` arrowheads are not instantiated;
+/// painted): `marker-end` arrowheads *are* instantiated (see
+/// [_buildEndMarker]) but `marker-start`/`marker-mid` are not;
 /// `clipPath`/`mask`/`pattern`/gradients are not applied; `<tspan>`
-/// sub-styling inside `<text>` is flattened to one run. All revisited in
-/// Phase 7 (full stencil set, which needs arrowheads) or Phase 10 (export
-/// fidelity).
+/// sub-styling inside `<text>` is flattened to one run. Revisited in
+/// Phase 7 (full stencil set) or Phase 10 (export fidelity).
 SceneNode buildScene(SdDocument document) {
   final ids = <String, SdElement>{
     for (final e in document.root.descendantElements)
@@ -115,6 +115,7 @@ SceneNode? _build(
 
   final fillPaint = state.fillPaint;
   final strokePaint = state.strokePaint;
+  final markerNode = _buildEndMarker(element, path, ids);
   return SceneNode(
     element: element,
     transform: transform,
@@ -123,7 +124,77 @@ SceneNode? _build(
     strokePath: strokePaint == null ? null : path,
     strokePaint: strokePaint,
     localBounds: path.getBounds(),
-    children: children,
+    children: markerNode == null ? children : [...children, markerNode],
+  );
+}
+
+final _urlRefPattern = RegExp(r'url\(#([^)]+)\)');
+
+/// Instantiates the `<marker>` referenced by [element]'s `marker-end`, at
+/// the end of [path] — the "directed edge + arrowhead" primitive (§5.1).
+/// `marker-start`/`marker-mid` are not implemented (Phase 2/3 scope cut);
+/// neither is `markerUnits="userSpaceOnUse"` (stroke-width-relative sizing
+/// is assumed, matching every arrowhead this project itself authors).
+SceneNode? _buildEndMarker(
+  SdElement element,
+  Path path,
+  Map<String, SdElement> ids,
+) {
+  final markerEndAttr = element.getAttribute(const SdQName('marker-end'));
+  if (markerEndAttr == null) return null;
+  final match = _urlRefPattern.firstMatch(markerEndAttr);
+  if (match == null) return null;
+  final marker = ids[match.group(1)!];
+  if (marker == null || marker.name.local != 'marker') return null;
+
+  final metrics = path.computeMetrics().toList();
+  if (metrics.isEmpty) return null;
+  final last = metrics.last;
+  final tangent = last.getTangentForOffset(last.length);
+  if (tangent == null) return null;
+
+  double vbX = 0, vbY = 0, vbW = 3, vbH = 3; // SVG default marker viewport.
+  final viewBoxRaw = marker.getAttribute(const SdQName('viewBox'));
+  if (viewBoxRaw != null) {
+    final parts = viewBoxRaw
+        .trim()
+        .split(RegExp(r'[\s,]+'))
+        .map(double.tryParse)
+        .toList();
+    if (parts.length == 4 && !parts.contains(null)) {
+      vbX = parts[0]!;
+      vbY = parts[1]!;
+      vbW = parts[2]!;
+      vbH = parts[3]!;
+    }
+  }
+  final markerWidth = _num(marker, 'markerWidth') ?? 3;
+  final markerHeight = _num(marker, 'markerHeight') ?? 3;
+  final refX = _num(marker, 'refX') ?? 0;
+  final refY = _num(marker, 'refY') ?? 0;
+  final orient = marker.getAttribute(const SdQName('orient'));
+  final rotation = (orient == 'auto' || orient == 'auto-start-reverse')
+      ? math.atan2(tangent.vector.dy, tangent.vector.dx)
+      : 0.0;
+  final scaleX = vbW == 0 ? 1.0 : markerWidth / vbW;
+  final scaleY = vbH == 0 ? 1.0 : markerHeight / vbH;
+
+  final placement =
+      Matrix4.translationValues(tangent.position.dx, tangent.position.dy, 0)
+        ..rotateZ(rotation)
+        ..scaleByDouble(scaleX, scaleY, 1.0, 1.0)
+        ..translateByDouble(-refX - vbX, -refY - vbY, 0.0, 1.0);
+
+  final content = <SceneNode>[
+    for (final child in marker.childElements)
+      ?_build(child, SvgPaintState.initial, ids, const {}, isUseTarget: true),
+  ];
+  if (content.isEmpty) return null;
+  return SceneNode(
+    element: marker,
+    transform: placement,
+    localBounds: Rect.zero,
+    children: content,
   );
 }
 
@@ -272,10 +343,18 @@ SceneNode? _buildText(
     textDirection: TextDirection.ltr,
   )..layout();
 
-  // SVG anchors `<text>` at its text baseline; TextPainter positions from
-  // the top-left of the laid-out box, so shift up by the (approximate)
-  // ascent to land the baseline at (x, y).
-  final origin = Offset(x, y - painter.height * 0.8);
+  // SVG anchors `<text>` at its text baseline, optionally offset
+  // horizontally by `text-anchor`; TextPainter positions from the top-left
+  // of the laid-out box, so shift up by the (approximate) ascent to land
+  // the baseline at (x, y), and left by half/all the width for
+  // middle/end anchoring.
+  final anchor = element.getAttribute(const SdQName('text-anchor'));
+  final dx = switch (anchor) {
+    'middle' => painter.width / 2,
+    'end' => painter.width,
+    _ => 0.0,
+  };
+  final origin = Offset(x - dx, y - painter.height * 0.8);
   return SceneNode(
     element: element,
     transform: transform,

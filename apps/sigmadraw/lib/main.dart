@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:sd_document/sd_document.dart';
 import 'package:sd_render/sd_render.dart';
+import 'package:sd_stencils/sd_stencils.dart';
+import 'package:sd_ui/sd_ui.dart';
 
 /// SigmaDraw application entry point.
 ///
-/// This is still an early scaffold: [SigmaDrawHome] wires up a real
-/// [SigmaCanvas] (Phase 2 — rendering/pan/zoom/selection) over a small
-/// hand-built demo document, standing in for real stencil placement
-/// (Phase 3) and the ribbon UI (Phase 5) that will eventually replace it.
+/// This is still an early scaffold: [SigmaDrawHome] wires up real
+/// Phase 2/3 pieces — a [StencilCanvasArea] (drop-to-place canvas), a
+/// [StencilPalette], an [ElementTree], and an [InspectorPanel], sharing
+/// one [SelectionModel] — in a plain [Row] layout standing in for the
+/// dockable-panel ribbon shell that Phase 5 will build.
 void main() {
   runApp(const SigmaDrawApp());
 }
@@ -27,91 +30,93 @@ class SigmaDrawApp extends StatelessWidget {
   }
 }
 
-/// A minimal two-block-and-a-wire diagram, just to exercise the Phase 2
-/// canvas end to end until Phase 3 adds a real stencil palette.
-SdDocument _demoDocument() {
-  final doc = createBlankSdDocument(
-    width: 400,
-    height: 200,
-    sampleRate: '48000',
-  );
-  doc.root.appendChild(
-    SdElement(
-      const SdQName('g'),
-      attributes: {const SdQName('transform'): 'translate(40,70)'},
-      children: [
-        SdElement(
-          const SdQName('circle'),
-          attributes: {
-            const SdQName('cx'): '30',
-            const SdQName('cy'): '30',
-            const SdQName('r'): '30',
-            const SdQName('fill'): '#ffffff',
-            const SdQName('stroke'): '#333333',
-            const SdQName('stroke-width'): '2',
-          },
-        ),
-        SdElement(
-          const SdQName('text'),
-          attributes: {
-            const SdQName('x'): '18',
-            const SdQName('y'): '36',
-            const SdQName('font-size'): '20',
-          },
-          children: [SdText('+')],
-        ),
-      ],
-    )..blockType = 'adder',
-  );
-  doc.root.appendChild(
-    SdElement(
-      const SdQName('path'),
-      attributes: {
-        const SdQName('d'): 'M100,100 L220,100',
-        const SdQName('stroke'): '#333333',
-        const SdQName('stroke-width'): '2',
-        const SdQName('vector-effect'): 'non-scaling-stroke',
-      },
-    )..edgeId = 'e1',
-  );
-  doc.root.appendChild(
-    SdElement(
-      const SdQName('g'),
-      attributes: {const SdQName('transform'): 'translate(220,70)'},
-      children: [
-        SdElement(
-          const SdQName('rect'),
-          attributes: {
-            const SdQName('width'): '80',
-            const SdQName('height'): '60',
-            const SdQName('fill'): '#ffffff',
-            const SdQName('stroke'): '#333333',
-            const SdQName('stroke-width'): '2',
-          },
-        ),
-        SdElement(
-          const SdQName('text'),
-          attributes: {
-            const SdQName('x'): '20',
-            const SdQName('y'): '36',
-            const SdQName('font-size'): '16',
-          },
-          children: [SdText('z⁻¹')],
-        ),
-      ],
-    )..blockType = 'delay',
-  );
-  return doc;
+class SigmaDrawHome extends StatefulWidget {
+  const SigmaDrawHome({super.key});
+
+  @override
+  State<SigmaDrawHome> createState() => _SigmaDrawHomeState();
 }
 
-class SigmaDrawHome extends StatelessWidget {
-  const SigmaDrawHome({super.key});
+class _SigmaDrawHomeState extends State<SigmaDrawHome> {
+  final _registry = StencilRegistry.builtIn();
+  final _selection = SelectionModel();
+  late final SdDocument _document;
+
+  @override
+  void initState() {
+    super.initState();
+    _document = createBlankSdDocument(
+      width: 1200,
+      height: 800,
+      sampleRate: '48000',
+    );
+  }
+
+  @override
+  void dispose() {
+    _selection.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('SigmaDraw')),
-      body: SigmaCanvas(document: _demoDocument()),
+      body: Row(
+        children: [
+          SizedBox(
+            width: 220,
+            child: Material(
+              elevation: 1,
+              child: StencilPalette(registry: _registry),
+            ),
+          ),
+          Expanded(
+            child: StencilCanvasArea(
+              document: _document,
+              selection: _selection,
+            ),
+          ),
+          SizedBox(
+            width: 280,
+            child: Material(
+              elevation: 1,
+              child: Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Elements'),
+                    ),
+                  ),
+                  Expanded(
+                    child: ElementTree(
+                      document: _document,
+                      selection: _selection,
+                      registry: _registry,
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Inspector'),
+                    ),
+                  ),
+                  Expanded(
+                    child: InspectorPanel(
+                      selection: _selection,
+                      registry: _registry,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

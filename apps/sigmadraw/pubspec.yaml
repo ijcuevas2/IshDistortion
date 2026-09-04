@@ -16,6 +16,10 @@ dependencies:
     path: ../../packages/sd_document
   sd_render:
     path: ../../packages/sd_render
+  sd_stencils:
+    path: ../../packages/sd_stencils
+  sd_ui:
+    path: ../../packages/sd_ui
 
 dev_dependencies:
   flutter_test:

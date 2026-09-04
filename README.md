@@ -26,18 +26,34 @@ Built and verified so far (each gate below is green — see "Build & test"):
   the document, a quadtree spatial index, pan/zoom/grid, precise
   fill/stroke hit-testing, and click/marquee selection with move +
   uniform-corner-scale drag handles — all wired into `apps/sigmadraw` over
-  a small hand-built demo document (Phase 3 replaces that with real
-  stencil placement). 75 tests, several of which caught real bugs during
-  development (see git history / code comments for specifics, e.g. the
-  `hitTestHandle` closest-not-first fix).
+  a small hand-built demo document. 77 tests, several of which caught real
+  bugs during development (see git history / code comments, e.g. the
+  `hitTestHandle` closest-not-first fix). Also gained basic `marker-end`
+  arrowhead rendering, added while building Phase 3's stencils.
+- **Phase 3 — Stencils (core) + placement.** `packages/sd_stencils`: a
+  data-driven `StencilDefinition` model (geometry generator + ports +
+  param schema + `directFeedthrough`) and 12 core §5.1-5.3 primitives
+  (adder, gain, pickoff node, source/sink, delay, continuous delay,
+  up/downsampler, sampler, ZOH/FOH) — composite/macro stencils
+  (tapped-delay-line, rate converters, ...) are deliberately deferred to
+  Phase 7. `packages/sd_ui` gained a searchable/draggable stencil
+  palette, a drop-to-place canvas wrapper, an element tree, and a
+  property inspector, all wired into the app shell (plain `Row` layout —
+  the dockable ribbon shell is Phase 5). 25 + 7 more tests.
 
-Everything else in §12 (Phases 3–11 — the full stencil library, the
-semantic graph, the ribbon UI, ink/pen input and its five native plugins,
-analysis, LaTeX, export, polish) is **not started**. `packages/sd_graph`,
-`sd_stencils`, `sd_ink`, `sd_input`, `sd_ui`, `sd_latex`, `sd_export`, and
-`sd_commands` are empty scaffolds (a `library;` stub, no `test/`), and
-`plugins/sd_pen_*` are placeholder READMEs — see each one for what it'll
-need to become in Phase 6.
+**Reprioritized next**: rather than strictly Phase 4→5→6→7 in order, Phase
+4 (semantic graph) and Phase 8 (analysis: Tarjan loop detection, Mason's
+gain formula) are being pulled forward, since together they're this
+project's core "semantically aware, not merely a drawing tool" claim and
+§13's acceptance criteria name them explicitly (a biquad DF2T validating
+and Mason yielding the correct H(z)). Ribbon UI (5), ink/pen + native
+plugins (6), the rest of the stencil library (7), LaTeX (9), export (10),
+and polish (11) follow as time allows.
+
+Not started: `packages/sd_graph`, `sd_ink`, `sd_input`, `sd_latex`,
+`sd_export`, and `sd_commands` are empty scaffolds (a `library;` stub, no
+`test/`), and `plugins/sd_pen_*` are placeholder READMEs — see each one
+for what it'll need to become in Phase 6.
 
 ## Repo layout
 
@@ -47,11 +63,11 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
 /packages/sd_graph         # empty — Phase 4 (semantic graph: ports/edges/types/validation)
-/packages/sd_stencils      # empty — Phase 3/7 (DSP symbol library)
+/packages/sd_stencils      # ✅ Phase 3 (core) — DSP symbol library, §5.1-5.3; §5.4-5.11 in Phase 7
 /packages/sd_render        # ✅ Phase 2 — scene/display-list, CustomPainters, pan/zoom, selection
 /packages/sd_ink           # empty — Phase 6 (stroke model, pressure curves)
 /packages/sd_input         # empty — Phase 6 (pointer/pen pipeline)
-/packages/sd_ui            # empty — Phase 5 (ribbon, panels)
+/packages/sd_ui            # 🚧 Phase 3 (partial) — palette/tree/inspector; ribbon/docking in Phase 5
 /packages/sd_latex         # empty — Phase 9 (math rendering)
 /packages/sd_export        # empty — Phase 10 (SVG/PDF/PNG/EPS/TikZ export)
 /packages/sd_commands      # empty — undo/redo (no phase owns it alone; needed by 2+)

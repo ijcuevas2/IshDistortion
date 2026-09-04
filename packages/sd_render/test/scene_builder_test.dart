@@ -85,6 +85,37 @@ void main() {
       expect(worldBounds, const Rect.fromLTWH(0, 0, 20, 20));
     });
 
+    test('a marker-end arrowhead is instantiated at the path end, oriented along it', () {
+      final doc = _parse('''
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#000000"/>
+          </marker>
+        </defs>
+        <line x1="0" y1="0" x2="100" y2="0" stroke="#000000" marker-end="url(#arrow)"/>
+      ''');
+      final lineNode = buildScene(doc).children
+          .firstWhere((n) => n.element.name.local == 'line');
+      expect(lineNode.children, hasLength(1));
+      final markerNode = lineNode.children.single;
+      // The marker's own ref point (9,5) — not its local origin, which
+      // is offset from ref — must land exactly on the line's end (100,0).
+      final refPoint = MatrixUtils.transformPoint(
+        markerNode.transform,
+        const Offset(9, 5),
+      );
+      expect(refPoint.dx, closeTo(100, 0.01));
+      expect(refPoint.dy, closeTo(0, 0.01));
+    });
+
+    test('no marker-end attribute means no marker child is added', () {
+      final doc = _parse(
+        '<line x1="0" y1="0" x2="10" y2="0" stroke="#000000"/>',
+      );
+      final lineNode = buildScene(doc).children.single;
+      expect(lineNode.children, isEmpty);
+    });
+
     test('a self-referencing <use> cycle does not hang or crash', () {
       final doc = _parse('<g id="a"><use href="#a"/></g>');
       expect(() => buildScene(doc), returnsNormally);

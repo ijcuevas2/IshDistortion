@@ -12,6 +12,12 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
+  sd_document:
+    path: ../sd_document
+  sd_render:
+    path: ../sd_render
+  sd_stencils:
+    path: ../sd_stencils
 
 dev_dependencies:
   flutter_test:
