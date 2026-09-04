@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:sd_document/sd_document.dart';
 import 'package:sd_graph/sd_graph.dart';
+import 'package:sd_latex/sd_latex.dart';
 
 import 'document_listenable.dart';
 
 /// A live `H(z)` readout via Mason's gain formula (§4/§10's "Compute
 /// transfer function (Mason)"), recomputed from the document's current
-/// `source`/`sink` blocks whenever it changes. Pole-zero generation from
-/// this H(z) (§4/§5.11) is not implemented yet.
+/// `source`/`sink` blocks whenever it changes. Rendered as real typeset
+/// math (`Expr.toTex()` through `sd_latex`'s [LatexLabel]), not a plain
+/// monospace expression string. Pole-zero generation from this H(z)
+/// (§4/§5.11) is not implemented yet.
 class TransferFunctionPanel extends StatefulWidget {
   const TransferFunctionPanel({super.key, required this.document});
 
@@ -46,22 +49,24 @@ class _TransferFunctionPanelState extends State<TransferFunctionPanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('H(z)', style: Theme.of(context).textTheme.labelMedium),
-              const SizedBox(height: 4),
-              if (hasLoop)
+              if (hasLoop) ...[
+                Text('H(z)', style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: 4),
                 const Text(
                   'Cannot compute: the diagram has an algebraic (delay-free) loop.',
                   style: TextStyle(fontSize: 12, color: Colors.red),
-                )
-              else if (result == null)
+                ),
+              ] else if (result == null) ...[
+                Text('H(z)', style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: 4),
                 const Text(
                   'Place a "source" and a "sink" block to compute a transfer function.',
                   style: TextStyle(fontSize: 12),
-                )
-              else
-                SelectableText(
-                  '${result.h}',
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                ),
+              ] else
+                LatexLabel(
+                  'H(z) = ${result.h.toTex()}',
+                  style: const TextStyle(fontSize: 16),
                 ),
             ],
           ),

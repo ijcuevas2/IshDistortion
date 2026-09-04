@@ -17,6 +17,7 @@ export 'src/save_mode.dart';
 export 'src/semantics/block_semantics.dart';
 export 'src/semantics/document_semantics.dart';
 export 'src/semantics/edge_semantics.dart';
+export 'src/semantics/latex_semantics.dart';
 export 'src/semantics/layer_semantics.dart';
 export 'src/semantics/sd_attributes.dart';
 export 'src/semantics/stroke_semantics.dart';

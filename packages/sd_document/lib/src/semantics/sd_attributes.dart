@@ -36,6 +36,14 @@ abstract final class SdAttr {
   static final stroke = SdQName.sd('stroke');
   static final pressure = SdQName.sd('pressure');
 
+  /// The original, editable LaTeX source behind an embedded math fragment
+  /// (§11: "Store original LaTeX source in `sd:latex` (textext-style
+  /// editable)") — carried on the `<g>` that wraps that fragment's real
+  /// vector glyph content, alongside the rendered geometry itself, so
+  /// reopening the document lets the equation be re-edited (and
+  /// recompiled) rather than only displayed.
+  static final latex = SdQName.sd('latex');
+
   // Document-level (§3).
   static final schema = SdQName.sd('schema');
   static final sampleRate = SdQName.sd('sampleRate');

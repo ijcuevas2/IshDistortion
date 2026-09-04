@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sd_document/sd_document.dart';
+import 'package:sd_latex/sd_latex.dart';
 import 'package:sd_render/sd_render.dart';
 import 'package:sd_stencils/sd_stencils.dart';
 import 'package:sd_ui/sd_ui.dart';
@@ -88,7 +89,11 @@ void main() {
       await tester.pumpWidget(_wrap(TransferFunctionPanel(document: doc)));
       await tester.pump();
 
-      expect(find.text('2'), findsOneWidget);
+      // Rendered as real typeset math (LatexLabel), not a plain Text widget
+      // carrying the literal string — assert on what was actually computed
+      // and handed to the renderer, not on glyph-rendering internals.
+      final label = tester.widget<LatexLabel>(find.byType(LatexLabel));
+      expect(label.tex, 'H(z) = 2');
     });
 
     testWidgets('reports an algebraic loop instead of a bogus H(z)', (

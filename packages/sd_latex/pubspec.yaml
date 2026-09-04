@@ -12,10 +12,19 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
+  flutter_math_fork: ^0.7.4
+  sd_document:
+    path: ../sd_document
+  sd_graph:
+    path: ../sd_graph
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  sd_render:
+    path: ../sd_render
+  sd_stencils:
+    path: ../sd_stencils
 
 flutter:

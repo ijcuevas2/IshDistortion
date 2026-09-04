@@ -99,18 +99,45 @@ Built and verified so far (each gate below is green — see "Build & test"):
   toolchain check is graceful: the two compilation tests skip themselves
   if `pdflatex` isn't on `PATH`, rather than failing an environment that
   never had LaTeX installed.) 8 new tests.
+- **Phase 9 — math rendering, both paths §11 asks for.**
+  `sd_graph` gained `Expr.toTex()` (mirrors `toString()`'s precedence
+  handling exactly, substituting real LaTeX: braced `z^{-k}`, `\frac`,
+  and `<letter><digits>`-shaped coefficients like `b0`/`a1` rendered as a
+  proper subscript `b_{0}`/`a_{1}`) — verified the same way as Mason's
+  formula itself: not string-matching, but actually `pdflatex`-compiling
+  the rendered H(z) for the §13 biquad case, numerically *and*
+  symbolically. `sd_document` gained `sd:latex`/`SdLatexSemantics`
+  (§11's "store original LaTeX source, textext-style editable"). The new
+  `packages/sd_latex`: `LatexLabel` wraps `flutter_math_fork` for fast
+  on-screen rendering (falls back to showing its own raw source, not a
+  bare error, for a command outside that KaTeX subset) — now wired into
+  `sd_ui`'s H(z) panel, which shows real typeset math instead of a
+  monospace expression string; `compileLatexToSvg`/`embedLatex` is the
+  *desktop* path — `pdflatex` -> `dvisvgm --pdf --no-fonts`, run off the
+  UI isolate, id-prefixed by a content hash so multiple embedded
+  equations never collide — producing real vector glyph-outline
+  `<path>`/`<use>` content spliced into the document as an ordinary `<g>`
+  (verified end to end: compiled for real, round-tripped through native
+  SVG save/reload, and confirmed to actually paint via this project's own
+  `SpatialIndex`/`buildScene`, not just "looks like plausible XML");
+  `LatexRenderCache` avoids recompiling an unchanged source. 26 new
+  tests (11 in `sd_graph`, 3 in `sd_document`, 12 in `sd_latex`).
+  Not implemented: an equation-editor dialog/launcher (§10's Insert
+  ribbon item — there's no ribbon yet either), the built-in DSP label
+  helpers beyond what a stencil already renders itself (x[n]/y[n]-on-
+  edge, ...), and the optional experimental WASM-TeX fallback.
 
 **Next, if this continues**: Ribbon UI (5), ink/pen input + 5 native
-plugins (6), LaTeX (9), the rest of vector export — PDF/PNG/EPS/print
-(10) —, and polish (11) are all **not started**, and §5.5/§5.7/§5.8/§5.11
-remain thin (previous bullets). Given the true scope of §0-§15 (a
-production, cross-platform, multi-native-plugin app), these were not
-attempted in the interest of not shipping shallow/fake versions of them
-— see "What's not built" below.
+plugins (6), the rest of vector export — PDF/PNG/EPS/print (10) —, and
+polish (11) are all **not started**, and §5.5/§5.7/§5.8/§5.11 remain thin
+and Phase 9's equation-editor UI is missing (previous bullets). Given the
+true scope of §0-§15 (a production, cross-platform, multi-native-plugin
+app), these were not attempted in the interest of not shipping
+shallow/fake versions of them — see "What's not built" below.
 
-`packages/sd_ink`, `sd_input`, `sd_latex`, and `sd_commands` are still
-empty scaffolds (a `library;` stub, no `test/`), and `plugins/sd_pen_*`
-are placeholder READMEs — see each one for what it'll need to become in
+`packages/sd_ink`, `sd_input`, and `sd_commands` are still empty
+scaffolds (a `library;` stub, no `test/`), and `plugins/sd_pen_*` are
+placeholder READMEs — see each one for what it'll need to become in
 Phase 6.
 
 ## What's not built (be honest about scope)
@@ -142,8 +169,12 @@ faked. Concretely still missing:
   `StencilPalette`/`StencilCanvasArea` (which only knows single-block
   `StencilDefinition`s, not multi-element `FilterStructure`s) is
   unstarted UI work.
-- **LaTeX (§11, Phase 9)** — no `flutter_math_fork` on-screen rendering,
-  no `pdflatex`+`dvisvgm` pipeline for LaTeX-in-diagram content.
+- **The rest of LaTeX (§11, Phase 9).** Both rendering paths exist and
+  are wired into the H(z) panel (see above) — what's missing is UI to
+  *author* a standalone equation with them: an equation-editor dialog/
+  launcher (§10's Insert ribbon item), and the built-in DSP label
+  helpers (gain-coefficient-on-triangle, `x[n]`/`y[n]`-on-edge, ...)
+  beyond what a stencil already renders itself.
 - **The rest of vector export (§11, Phase 10): PDF, PNG@DPI, EPS/PS, and
   print dialogs.** TikZ export is done (see above) and Phase 1's SVG
   native/plain export already existed; a real, standard-TikZ,
@@ -168,7 +199,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_ink           # empty — Phase 6 (stroke model, pressure curves)
 /packages/sd_input         # empty — Phase 6 (pointer/pen pipeline)
 /packages/sd_ui            # 🚧 Phase 3+4 (partial) — palette/tree/inspector/problems/H(z); ribbon in 5
-/packages/sd_latex         # empty — Phase 9 (math rendering)
+/packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
 /packages/sd_export        # ✅ Phase 10 (partial) — TikZ export, pdflatex-verified; PDF/PNG/EPS/print pending
 /packages/sd_commands      # empty — undo/redo (no phase owns it alone; needed by 2+)
 /plugins/sd_pen_*           # placeholder READMEs — Phase 6 native pen plugins
@@ -239,6 +270,34 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   shelling out to `pdflatex` on the generated source in a temp
   directory — a string-content assertion alone can't actually prove a
   `.tex` file compiles.
+- **The desktop LaTeX pipeline is `dvisvgm --pdf`, not the classic
+  `latex` (dvi) -> `dvisvgm` route.** Both exist in this sandbox's TeX
+  distribution, but going through `pdflatex` directly (the same tool
+  Phase 10's TikZ export already shells out to, and the one `xelatex`/
+  `lualatex`-only packages actually need) then handing dvisvgm the PDF
+  (`--pdf`) is one fewer intermediate format and one fewer external tool
+  invocation than compiling to DVI first — dvisvgm has supported reading
+  PDF directly for years, so there's no fidelity cost.
+- **A compiled equation's ids are prefixed with a hash of its own source,
+  not left as dvisvgm emitted them (`g4-1`, `g3-2`, ...).** Those short
+  ids are only unique *within one compiled equation* — embedding two
+  different equations in the same document's shared `<defs>` without
+  renaming them would silently let one equation's `<use>` resolve to the
+  other's (differently-shaped) glyph outline once ids collide. The hash
+  (`fnv1a64Hex` — a small dependency-free FNV-1a, not a cryptographic
+  hash; nothing security-sensitive keys off it) only needs to be unique
+  across the handful of equations one real document embeds, not globally
+  unique, so this deliberately doesn't reach for `package:crypto`.
+- **`sd_latex`'s desktop pipeline runs the external processes in
+  `Isolate.run`, but returns only the raw SVG *text* across the isolate
+  boundary — never an `SdElement`/`SdNode` object graph.** §2/§14 are
+  explicit that LaTeX compilation must not block the UI isolate; sending
+  a plain `String` back is unambiguously safe to pass between isolates
+  and sidesteps ever having to reason about whether this project's
+  mutable, parent-linked document-tree nodes are safe to transfer (they
+  likely are — Dart's isolate messaging preserves object graphs,
+  including cycles — but there's no need to depend on that when the
+  actual expensive step, external process I/O, doesn't require it).
 
 ## Build & test
 

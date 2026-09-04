@@ -33,6 +33,20 @@ sealed class Expr {
     final parsed = num.tryParse(asString);
     return parsed != null ? ConstExpr(parsed) : SymbolExpr(asString);
   }
+
+  /// Renders this expression as LaTeX math-mode source — no surrounding
+  /// `$...$`/`\[...\]`, so callers choose the environment (`sd_latex`'s
+  /// on-screen `LatexLabel`, or a desktop `pdflatex` embed). Mirrors
+  /// [toString]'s structure and precedence handling exactly, substituting
+  /// proper TeX for the informal notation `toString` uses: `z^{-1}` (always
+  /// braced — an un-braced `z^-1` would only superscript the `-`), `\frac`
+  /// for division, and `<letter><digits>`-shaped symbol names (`b0`, `a1`,
+  /// as produced by [fromParam] for an unresolved coefficient) rendered as
+  /// a proper subscript (`b_{0}`) to match how every DSP text sets these.
+  /// Correctness is verified the same way as [evaluate]-based tests: not
+  /// by string-matching a "canonical" form, but by actually invoking
+  /// `pdflatex` on the generated output (see `expression_tex_test.dart`).
+  String toTex();
 }
 
 final class ConstExpr extends Expr {
@@ -48,6 +62,8 @@ final class ConstExpr extends Expr {
   int get hashCode => value.hashCode;
   @override
   String toString() => _formatNum(value);
+  @override
+  String toTex() => _formatNum(value);
 }
 
 final class SymbolExpr extends Expr {
@@ -67,6 +83,8 @@ final class SymbolExpr extends Expr {
   int get hashCode => name.hashCode;
   @override
   String toString() => name;
+  @override
+  String toTex() => _texSymbol(name);
 }
 
 /// `z^power` — [power] is negative for a causal delay (`z^-1`), per the
@@ -85,6 +103,8 @@ final class ZPowExpr extends Expr {
   int get hashCode => power.hashCode;
   @override
   String toString() => power == 0 ? '1' : (power == 1 ? 'z' : 'z^$power');
+  @override
+  String toTex() => power == 0 ? '1' : (power == 1 ? 'z' : 'z^{$power}');
 }
 
 final class AddExpr extends Expr {
@@ -104,6 +124,16 @@ final class AddExpr extends Expr {
     }
     return buffer.toString();
   }
+
+  @override
+  String toTex() {
+    final buffer = StringBuffer(terms.first.toTex());
+    for (final term in terms.skip(1)) {
+      final (negative, text) = _asSignedTermTex(term);
+      buffer.write(negative ? ' - $text' : ' + $text');
+    }
+    return buffer.toString();
+  }
 }
 
 final class MulExpr extends Expr {
@@ -117,6 +147,13 @@ final class MulExpr extends Expr {
   @override
   String toString() =>
       factors.map((f) => f is AddExpr ? '($f)' : '$f').join('*');
+
+  @override
+  String toTex() => factors
+      .map((f) => f is AddExpr ? '(${f.toTex()})' : f.toTex())
+      // Implicit multiplication, as every DSP text sets it — a thin space
+      // (not a literal `*`/`\cdot`) between factors.
+      .join(r'\,');
 }
 
 final class DivExpr extends Expr {
@@ -133,6 +170,9 @@ final class DivExpr extends Expr {
     String wrap(Expr e) => e is AddExpr ? '($e)' : '$e';
     return '${wrap(numerator)} / ${wrap(denominator)}';
   }
+
+  @override
+  String toTex() => '\\frac{${numerator.toTex()}}{${denominator.toTex()}}';
 }
 
 // --- smart constructors (simplification) ---------------------------------
@@ -209,6 +249,35 @@ Expr addExpr(List<Expr> rawTerms) {
   }
   return (false, term.toString());
 }
+
+(bool, String) _asSignedTermTex(Expr term) {
+  final (coeff, base) = _splitCoefficient(term);
+  if (coeff < 0) {
+    final positive = coeff == -1 ? base : mulExpr([ConstExpr(-coeff), base]);
+    return (true, positive.toTex());
+  }
+  return (false, term.toTex());
+}
+
+/// `<letters><digits>` (e.g. `b0`, `a12`, as [Expr.fromParam] names an
+/// unresolved coefficient) renders as a proper subscript (`b_{0}`); any
+/// other identifier is emitted as-is but with LaTeX's special characters
+/// escaped, in case a user-authored parameter name ever contains one.
+final RegExp _letterDigitsSymbol = RegExp(r'^([A-Za-z]+)(\d+)$');
+
+String _texSymbol(String name) {
+  final match = _letterDigitsSymbol.firstMatch(name);
+  if (match == null) return _texEscape(name);
+  return '${match.group(1)}_{${match.group(2)}}';
+}
+
+String _texEscape(String s) => s
+    .replaceAll(r'\', r'\textbackslash ')
+    .replaceAll('_', r'\_')
+    .replaceAll('&', r'\&')
+    .replaceAll('%', r'\%')
+    .replaceAll('#', r'\#')
+    .replaceAll(r'$', r'\$');
 
 Expr mulExpr(List<Expr> rawFactors) {
   final flat = <Expr>[];
