@@ -7,14 +7,18 @@ import 'package:sd_render/sd_render.dart'
 /// `StencilMetrics.kBaseUnit == 10` SVG units per tikz-dsp unit, and a
 /// typical tikz-dsp figure uses roughly 1cm per unit — so this puts a
 /// `squareBlock` (80 units) at ~4cm, matching a normal tikz-dsp figure's
-/// scale.
-const double _svgUnitsPerCm = 20;
+/// scale. Not private: `pdf_export.dart` reuses it as `exportToPdf`'s own
+/// default `scale`, so both exporters agree on one figure size absent an
+/// explicit override — a `const TikzExportOptions().scale` default
+/// there would read more directly, but property access on a const object
+/// isn't itself a valid constant expression in Dart.
+const double svgUnitsPerCm = 20;
 
 /// Options for [exportToTikz].
 class TikzExportOptions {
   const TikzExportOptions({
     this.standalone = true,
-    this.scale = 1 / _svgUnitsPerCm,
+    this.scale = 1 / svgUnitsPerCm,
   });
 
   /// Wrap the `tikzpicture` in a compilable `standalone` document (so the

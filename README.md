@@ -99,6 +99,29 @@ Built and verified so far (each gate below is green — see "Build & test"):
   toolchain check is graceful: the two compilation tests skip themselves
   if `pdflatex` isn't on `PATH`, rather than failing an environment that
   never had LaTeX installed.) 8 new tests.
+- **Phase 10 (partial) — PDF export, on top of that same TikZ
+  pipeline.** `exportToPdf` compiles the exact TikZ source
+  `exportToTikz` produces via the same `pdflatex` invocation
+  `tikz_export_test.dart` already verified compiles — the difference is
+  this is now a real library entry point (writes a real `.pdf` file at
+  a caller-given path) rather than only a test assertion. Compiles in
+  its own scratch temp directory (never the caller's chosen output
+  location) so `pdflatex`'s `.aux`/`.log`/... intermediates never leak
+  out — only the resulting `.pdf` is copied to `outputPath`, overwriting
+  whatever was there (ordinary "export"/"save" semantics). Runs off the
+  UI isolate via `Isolate.run`, the same technique (and the same
+  reasoning — §2/§14's "do not block the UI isolate on ... export") as
+  `sd_latex`'s `compileLatexToSvg`: only plain strings cross the
+  isolate boundary, never an `SdDocument` itself. Throws
+  `PdfExportException` (mirroring `LatexCompileException`'s shape) if
+  `pdflatex` is missing or the source fails to compile — no silent
+  fallback, since an explicit export request should fail loudly rather
+  than write a blank/wrong file. 3 new tests (all real, pdflatex-
+  compiling end-to-end checks, gracefully skipped if `pdflatex` isn't on
+  `PATH` — same convention as `exportToTikz`'s own compile tests).
+  Not implemented: a UI entry point (no "Export" ribbon item yet — the
+  same gap `compileLatexToSvg`/`embedLatex` had before the Insert-ribbon
+  equation dialog closed it), PNG@DPI, EPS/PS, and print dialogs.
 - **Phase 9 — math rendering, both paths §11 asks for.**
   `sd_graph` gained `Expr.toTex()` (mirrors `toString()`'s precedence
   handling exactly, substituting real LaTeX: braced `z^{-k}`, `\frac`,
@@ -336,9 +359,10 @@ Built and verified so far (each gate below is green — see "Build & test"):
   docking/undocking panels (still a fixed three-pane layout).
 
 **Next, if this continues**: the 5 native pen plugins (6/7), the rest
-of vector export — PDF/PNG/EPS/print (10) —, the rest of §5.11's
-analysis plots, and polish (11) are all **not started**, and
-§5.5/§5.7/§5.8 remain thin. Given the true scope of §0-§15 (a
+of vector export — PNG/EPS/print, plus a UI entry point for the
+exports that exist (10) —, the rest of §5.11's analysis plots, and
+polish (11) are all **not started**, and §5.5/§5.7/§5.8 remain thin.
+Given the true scope of §0-§15 (a
 production, cross-platform, multi-native-plugin app), these were not
 attempted in the interest of not shipping shallow/fake versions of
 them — see "What's not built" below.
@@ -389,11 +413,13 @@ faked. Concretely still missing:
   remains is the built-in DSP label helpers (gain-coefficient-on-
   triangle, `x[n]`/`y[n]`-on-edge, ...) beyond what a stencil already
   renders itself, and the optional experimental WASM-TeX fallback.
-- **The rest of vector export (§11, Phase 10): PDF, PNG@DPI, EPS/PS, and
-  print dialogs.** TikZ export is done (see above) and Phase 1's SVG
-  native/plain export already existed; a real, standard-TikZ,
-  `pdflatex`-verified path is the one export format beyond SVG that
-  exists so far.
+- **The rest of vector export (§11, Phase 10): PNG@DPI, EPS/PS, and
+  print dialogs, plus a UI entry point for the exports that do
+  exist.** TikZ and PDF export are both done as library functions (see
+  above), and Phase 1's SVG native/plain export already existed — but
+  none of the three have an "Export" ribbon item calling them yet, the
+  same gap the equation dialog closed for `sd_latex`'s compile
+  pipeline.
 - **Polish (§11, Phase 11)**: autosave, templates, dark mode, i18n,
   accessibility, perf tuning at the ≥10,000-element scale, tablet UX.
 - Within what *is* built: snapping, orthogonal connector routing
@@ -414,7 +440,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
 /packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert), equation dialog, palette/tree/inspector/problems/H(z)/pole-zero/Bode
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
-/packages/sd_export        # ✅ Phase 10 (partial) — TikZ export, pdflatex-verified; PDF/PNG/EPS/print pending
+/packages/sd_export        # ✅ Phase 10 (partial) — TikZ+PDF export, pdflatex-verified; PNG/EPS/print + UI entry point pending
 /packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app
 /plugins/sd_pen_*           # placeholder READMEs — Phase 6 native pen plugins
 /docs                       # architecture-mining notes (§1) + this project's own notes
@@ -651,6 +677,23 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   working unchanged); the outer `InkWell` only ever catches a tap that
   lands outside it, on the caption — Flutter's gesture arena resolves
   the overlap rather than double-firing.
+- **`PdfExportException` duplicates `sd_latex`'s `LatexCompileException`
+  shape rather than reusing it.** The two exceptions represent the same
+  *kind* of failure (an external LaTeX-toolchain process is missing or
+  errors out) in two otherwise-unrelated packages; adding an
+  `sd_export` -> `sd_latex` dependency just to share one ten-line
+  exception class would be the wrong direction of coupling (export
+  doesn't otherwise need anything `sd_latex` provides) for what it
+  would save.
+- **`exportToPdf`'s default `scale` duplicates `TikzExportOptions`'
+  own default (`1 / svgUnitsPerCm`) as a literal expression, rather
+  than reading `const TikzExportOptions().scale` directly.** The
+  latter reads more directly but isn't a valid Dart constant expression
+  (property access on a const object isn't itself const) — so
+  `tikz_export.dart`'s `svgUnitsPerCm` was made non-private instead,
+  giving both files one real shared source of truth for the number
+  itself, even though the *expression* combining it is written out
+  twice.
 
 ## Build & test
 
