@@ -646,10 +646,39 @@ Built and verified so far (each gate below is green — see "Build & test"):
   register's own update equation needs, with no separate "next state"
   bookkeeping beyond the diagram's own wiring. 6 new `sd_stencils`
   tests (100 → 106).
+- **§5.7/§5.8 leaf stencils.** New `sd_stencils/lib/src/comms.dart`
+  (§5.7, 26 stencils: mixer, NCO/DDS, phase shifter, 90° hybrid, I/Q
+  mod/demod, matched filter, correlator, integrate-and-dump, the
+  PLL's own named sub-blocks — phase detector/loop filter/VCO/
+  frequency divider — as separately-placeable stencils rather than one
+  opaque "PLL" box, Costas loop, AGC, equalizer, interleaver/
+  deinterleaver, encoder/decoder, mapper/demapper, RRC pulse shaper,
+  channel, AWGN source, and a constellation reference block) and
+  `adaptive.dart` (§5.8: LMS/RLS — with the spec's own "error input +
+  dashed coefficient-update path," the dashed line a schematic
+  indicator only, no separate real port for a filter's internal taps —
+  and a generic estimator; `correlator` is shared with `comms.dart`
+  rather than duplicated, since §5.7 *and* §5.8 both name it). Most of
+  these are, honestly, "topological/visual only" labeled boxes — the
+  same simplification `control.dart`'s `plant`/`controller` already
+  make for §5.9 — since a real mixer/PLL/AGC/etc. is a whole subsystem,
+  not one concrete z-domain gain a symbolic `H(z)` could meaningfully
+  represent. `hybrid90`/`iqDemodulator` are two more multi-output
+  blocks sharing the `butterfly`'s own documented Mason-analysis
+  caveat. `geometry.dart`'s `lineShape` gained an optional `dashArray`
+  param for the LMS/RLS dashed line (additive, every existing call
+  site unaffected). Registered in `StencilRegistry.builtIn` and
+  exported from the package barrel. 33 new `sd_stencils` tests
+  (mirroring `extended_stencils_test.dart`'s existing generic "every
+  leaf stencil instantiates/every port lies within its own footprint"
+  loop, which already caught a real bug once before — see the
+  systolic-cell note in that file — plus targeted checks for the new
+  multi-port/multi-input shapes) (106 → 139).
 
 **Next, if this continues**: the 5 native pen plugins (6/7) and print
-export (10) are all **not started**; §5.5's wave-digital form, §5.7,
-and §5.8 remain thin/unstarted.
+export (10) are all **not started**; §5.5's wave-digital form remains
+unbuilt (see the "Architecture decisions" entry on why — a real Mason
+prerequisite, not just a to-do).
 Given the true scope of §0-§15 (a
 production, cross-platform, multi-native-plugin app), these were not
 attempted in the interest of not shipping shallow/fake versions of
@@ -709,8 +738,16 @@ faked. Concretely still missing:
   prerequisite, and is its own separate undertaking on `sd_graph`'s
   core (touched by pole-zero/Bode/Nyquist/spectrogram alike), not a
   `filter_templates.dart`-sized addition.
-  §5.7 (comms/modulation — mixer, NCO, PLL, Costas loop, ...) and §5.8
-  (adaptive/statistical — LMS/RLS, ...) are entirely unimplemented.
+  §5.7 (comms/modulation) and §5.8 (adaptive/statistical) leaf
+  stencils are now built (see above) — and, unlike the filter-
+  structure generators just above (which return a `FilterStructure`,
+  not a placeable `StencilDefinition`, so still need their own UI
+  entry point), these needed none: every ordinary `StencilDefinition`
+  registered in `StencilRegistry.builtIn()` is already
+  search/drag-to-canvas-placeable through the existing, stencil-
+  agnostic `StencilPalette`/`StencilCanvasArea` — confirmed by
+  `extended_stencils_test.dart`'s own registry-inclusion check, not
+  just assumed.
   §5.11's
   "Analysis Plot" section (pole-zero, Bode, Nyquist, and now
   spectrogram — see above) has every plot it names built — at the time
@@ -750,7 +787,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
 /packages/sd_graph         # ✅ Phase 4+8+5.11 (done) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram
-/packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + §5.5 nearly complete (FIR/IIR/lattice/comb/allpass/CIC/state-space; only wave-digital left) generators
+/packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1-4,6,7,8,9,10 leaf stencils + §5.5 nearly complete (FIR/IIR/lattice/comb/allpass/CIC/state-space; only wave-digital left) generators
 /packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, done) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
@@ -1226,6 +1263,18 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   value so far (the biquad DF2T's textbook `H(z)`, the FIR lattice's
   own closed forms, ...), just harder to skip here since no textbook
   formula was sitting nearby to (mis)quote instead.
+- **Dart's null-aware map-literal syntax checks the *value* side with
+  `key: ?value`, not the key side with `?key: value`.** `?key: value`
+  (which `lineShape`'s new `dashArray` param tried first) omits the
+  entry only if the *key* is null — meaningless for a `const SdQName`
+  key that's never null, and the analyzer says so directly ("the map
+  entry key can't be null"). `key: ?value` is the one that omits the
+  entry when `value` is null, which is what a nullable trailing
+  parameter like `dashArray` actually needs. Easy to get backwards
+  since `if (value != null) key: value` (the older, always-correct
+  form still used elsewhere in this same function for `markerEnd`)
+  reads left-to-right in condition-then-key order, while the new
+  syntax's "?" binds to whichever side is actually nullable.
 
 ## Build & test
 

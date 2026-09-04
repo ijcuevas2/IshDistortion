@@ -77,6 +77,7 @@ SdElement lineShape({
   String stroke = '#1a1a1a',
   double strokeWidth = StencilMetrics.wireWidth,
   String? markerEnd,
+  String? dashArray,
 }) => SdElement(
   const SdQName('line'),
   attributes: {
@@ -88,6 +89,7 @@ SdElement lineShape({
     _strokeWidth: '$strokeWidth',
     const SdQName('vector-effect'): 'non-scaling-stroke',
     if (markerEnd != null) const SdQName('marker-end'): 'url(#$markerEnd)',
+    const SdQName('stroke-dasharray'): ?dashArray,
   },
 );
 

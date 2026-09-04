@@ -1,11 +1,20 @@
 /// The DSP symbol library for SigmaDraw (§5): stencil definitions (SVG
 /// geometry generator + ports + parameter schema + semantic mapping),
 /// instantiated as real, placeable `SdElement`s with the full block dual
-/// representation. Ships §5.1-5.3 (primitives, delay/shift, multirate) —
-/// see `primitives.dart`'s doc comments for the deliberate scope cuts
-/// (composite/macro stencils like tapped-delay-line land in Phase 7).
+/// representation. Ships §5.1-§5.4, §5.6-§5.10's leaf stencils, and
+/// §5.5's filter *structures* as composite generators (`buildFirDirectForm`
+/// et al. — see `filter_templates.dart`; every other subsection's stencils
+/// are single placeable blocks). §5.7 (`comms.dart`)/§5.8 (`adaptive.dart`)
+/// are mostly "topological/visual only" boxes — real modulation/
+/// synchronization/adaptive-filter blocks are whole subsystems, not one
+/// concrete z-domain gain, the same honest simplification `control.dart`'s
+/// `plant`/`controller` already make for §5.9. §5.11 (analysis-plot
+/// objects) isn't implemented as placeable stencils — those live as
+/// live-computed panels instead (`sd_render`/`sd_ui`).
 library;
 
+export 'src/adaptive.dart';
+export 'src/comms.dart';
 export 'src/control.dart';
 export 'src/edge_builder.dart';
 export 'src/filter_templates.dart';

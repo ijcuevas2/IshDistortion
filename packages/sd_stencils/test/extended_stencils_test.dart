@@ -5,12 +5,21 @@ import 'package:test/test.dart';
 const _svgShapeTags = {'circle', 'rect', 'line', 'polygon', 'path', 'text'};
 
 void main() {
-  final allExtended = [
-    ...quantizationStencils,
-    ...controlStencils,
-    ...hardwareStencils,
-    ...transformStencils,
-  ];
+  // Deduplicated by id: adaptiveStencils deliberately re-lists
+  // correlator (comms.dart) — see that file's own doc comment — which
+  // would otherwise register two identically-named tests below for the
+  // exact same stencil.
+  final allExtended = <String, StencilDefinition>{
+    for (final s in [
+      ...quantizationStencils,
+      ...controlStencils,
+      ...hardwareStencils,
+      ...transformStencils,
+      ...commsStencils,
+      ...adaptiveStencils,
+    ])
+      s.id: s,
+  }.values.toList();
 
   group('every Phase 7 leaf stencil', () {
     for (final stencil in allExtended) {
@@ -64,6 +73,56 @@ void main() {
       butterfly.ports.where((p) => p.direction == PortDirection.output),
       hasLength(2),
     );
+  });
+
+  test('hybrid90 and iqDemodulator each have one input and two outputs '
+      '(the same multi-output shape as the butterfly)', () {
+    for (final s in [hybrid90, iqDemodulator]) {
+      expect(
+        s.ports.where((p) => p.direction == PortDirection.input),
+        hasLength(1),
+        reason: s.id,
+      );
+      expect(
+        s.ports.where((p) => p.direction == PortDirection.output),
+        hasLength(2),
+        reason: s.id,
+      );
+    }
+  });
+
+  test('lms and rls each have a signal input, an error input, and one '
+      'output', () {
+    for (final s in [lms, rls]) {
+      expect(s.ports.map((p) => p.id), containsAll(['in1', 'error', 'out1']));
+      expect(
+        s.ports.where((p) => p.direction == PortDirection.output),
+        hasLength(1),
+        reason: s.id,
+      );
+    }
+  });
+
+  test('every stateful §5.7/§5.8 block reports directFeedthrough: false', () {
+    for (final s in [
+      integrateAndDump,
+      vco,
+      costasLoop,
+      agc,
+      equalizer,
+      interleaver,
+      deinterleaver,
+      correlator,
+      lms,
+      rls,
+      estimator,
+    ]) {
+      expect(s.directFeedthrough, isFalse, reason: s.id);
+    }
+  });
+
+  test('mixer has a signal input and a local-oscillator input', () {
+    expect(mixer.ports.map((p) => p.id), containsAll(['in1', 'lo', 'out1']));
   });
 
   test('StencilRegistry.builtIn includes every Phase 7 stencil', () {
