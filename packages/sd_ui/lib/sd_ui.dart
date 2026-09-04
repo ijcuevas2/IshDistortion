@@ -1,17 +1,19 @@
 /// Ribbon, panels, element tree, inspector, palette, and status bar for
 /// SigmaDraw (§10). Scope so far: a data-driven [Ribbon] (tabs of titled
-/// action groups — Home's Clipboard/Undo/Tools/Zoom, Insert's Equation),
-/// an equation-insert dialog wiring `sd_latex`'s compile pipeline to the
-/// document for the first time, the stencil palette (search + drag), a
-/// drop-to-place-and-connect-and-draw canvas wrapper, the element tree,
-/// the property inspector, a live Problems panel, and live H(z)/pole-zero/
-/// Bode readouts (§4/§5.11's semantic-graph analysis, surfaced in the UI).
-/// Docking and the status bar remain unbuilt.
+/// action groups — Home's Clipboard/Undo/Tools/Zoom, Insert's Equation,
+/// Export's PDF), dialogs wiring `sd_latex`'s compile pipeline and
+/// `sd_export`'s PDF pipeline to the document for the first time, the
+/// stencil palette (search + drag), a drop-to-place-and-connect-and-draw
+/// canvas wrapper, the element tree, the property inspector, a live
+/// Problems panel, and live H(z)/pole-zero/Bode readouts (§4/§5.11's
+/// semantic-graph analysis, surfaced in the UI). Docking and the status
+/// bar remain unbuilt.
 library;
 
 export 'src/bode_panel.dart';
 export 'src/document_listenable.dart';
 export 'src/element_tree.dart';
+export 'src/export_pdf_dialog.dart';
 export 'src/insert_latex_dialog.dart';
 export 'src/inspector_panel.dart';
 export 'src/pole_zero_panel.dart';

@@ -12,13 +12,15 @@ import 'package:sd_ui/sd_ui.dart';
 /// 2-4 pieces — a [StencilCanvasArea] (drop-to-place, drag-to-connect,
 /// and (§6/§7) draw-ink canvas), a [StencilPalette], and a tabbed
 /// [ElementTree] / [InspectorPanel] / [ProblemsPanel] /
-/// [TransferFunctionPanel] / [PoleZeroPanel], sharing one [SelectionModel]
-/// and one [UndoStack] (§2/§12 — every mutation those pieces make routes
-/// through it, undoable via the ribbon's buttons or
+/// [TransferFunctionPanel] / [PoleZeroPanel] / [BodePanel], sharing one
+/// [SelectionModel] and one [UndoStack] (§2/§12 — every mutation those
+/// pieces make routes through it, undoable via the ribbon's buttons or
 /// Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y). §5's [Ribbon] (Phase 5) is the real
-/// dockable-panel ribbon shell: a Home tab (Clipboard/Undo/Tools/Zoom)
-/// and an Insert tab ([InsertLatexDialog] — the UI entry point Phase 9's
-/// `sd_latex` compile pipeline had been missing).
+/// dockable-panel ribbon shell: a Home tab (Clipboard/Undo/Tools/Zoom),
+/// an Insert tab ([InsertLatexDialog] — the UI entry point Phase 9's
+/// `sd_latex` compile pipeline had been missing), and an Export tab
+/// ([ExportPdfDialog] — the same kind of gap for `sd_export`'s PDF
+/// pipeline).
 void main() {
   runApp(const SigmaDrawApp());
 }
@@ -123,6 +125,17 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
       selection: _selection,
     ),
   );
+
+  Future<void> _exportPdf() async {
+    final path = await showDialog<String>(
+      context: context,
+      builder: (_) => ExportPdfDialog(document: _document),
+    );
+    if (path != null && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Exported to $path')));
+    }
+  }
 
   /// The ribbon's Home tab: Clipboard/Undo/Tools/Zoom groups. Rebuilt from
   /// inside a [ListenableBuilder] merging every model an action's enabled
@@ -236,6 +249,23 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
     ],
   );
 
+  RibbonTab _exportTab() => RibbonTab(
+    title: 'Export',
+    groups: [
+      RibbonGroup(
+        title: 'Vector',
+        actions: [
+          RibbonAction(
+            icon: Icons.picture_as_pdf,
+            label: 'PDF',
+            tooltip: 'Export this diagram to PDF',
+            onPressed: _exportPdf,
+          ),
+        ],
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     return CallbackShortcuts(
@@ -261,7 +291,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
               ListenableBuilder(
                 listenable: Listenable.merge([_documentListenable, _selection]),
                 builder: (context, _) =>
-                    Ribbon(tabs: [_homeTab(), _insertTab()]),
+                    Ribbon(tabs: [_homeTab(), _insertTab(), _exportTab()]),
               ),
               Expanded(
                 child: Row(

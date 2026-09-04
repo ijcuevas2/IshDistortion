@@ -119,9 +119,30 @@ Built and verified so far (each gate below is green — see "Build & test"):
   than write a blank/wrong file. 3 new tests (all real, pdflatex-
   compiling end-to-end checks, gracefully skipped if `pdflatex` isn't on
   `PATH` — same convention as `exportToTikz`'s own compile tests).
-  Not implemented: a UI entry point (no "Export" ribbon item yet — the
-  same gap `compileLatexToSvg`/`embedLatex` had before the Insert-ribbon
-  equation dialog closed it), PNG@DPI, EPS/PS, and print dialogs.
+  `sd_ui` gained `ExportPdfDialog` — a new Export ribbon tab's "PDF"
+  action, closing the same UI-entry-point gap the equation dialog
+  closed for `sd_latex`: type (or accept the suggested) output path,
+  Export runs the real pipeline, a `SnackBar` on the app shell confirms
+  where it went. Building this surfaced a real, previously-latent
+  testing pitfall: `Isolate.run` does not reliably complete when
+  exercised from inside a `testWidgets` test (confirmed by watching a
+  first draft of this dialog's own test hang indefinitely with no
+  `pdflatex` process ever spawned, per `ps`) — the same reason
+  `InsertLatexDialog` already went through an injectable
+  `LatexRenderCache` rather than calling `compileLatexToSvg` directly,
+  just not one this project had hit head-on before. Fixed the same way:
+  `ExportPdfDialog.exportPdf` is now injectable (default: the real
+  `exportToPdf`), and its own tests exercise the dialog's reaction to
+  success/`PdfExportException`/a bad path via an injected fake — the
+  real pipeline stays fully covered in `pdf_export_test.dart`'s plain,
+  non-widget tests instead. Also broadened the dialog's own error
+  handling to a separate `FileSystemException` catch (friendlier
+  message) alongside `PdfExportException`, since a hand-typed path
+  (there's no native file-picker dependency here) can easily name an
+  unwritable location — `exportToPdf`'s own compile step can succeed
+  before failing only on the final copy. 6 new `sd_ui` tests, 1 new app
+  test. Not implemented: PNG@DPI, EPS/PS, and print dialogs, and a real
+  native file-save picker (a plain text field stands in for one).
 - **Phase 9 — math rendering, both paths §11 asks for.**
   `sd_graph` gained `Expr.toTex()` (mirrors `toString()`'s precedence
   handling exactly, substituting real LaTeX: braced `z^{-k}`, `\frac`,
@@ -359,10 +380,9 @@ Built and verified so far (each gate below is green — see "Build & test"):
   docking/undocking panels (still a fixed three-pane layout).
 
 **Next, if this continues**: the 5 native pen plugins (6/7), the rest
-of vector export — PNG/EPS/print, plus a UI entry point for the
-exports that exist (10) —, the rest of §5.11's analysis plots, and
-polish (11) are all **not started**, and §5.5/§5.7/§5.8 remain thin.
-Given the true scope of §0-§15 (a
+of vector export — PNG/EPS/print (10) —, the rest of §5.11's analysis
+plots, and polish (11) are all **not started**, and §5.5/§5.7/§5.8
+remain thin. Given the true scope of §0-§15 (a
 production, cross-platform, multi-native-plugin app), these were not
 attempted in the interest of not shipping shallow/fake versions of
 them — see "What's not built" below.
@@ -414,12 +434,14 @@ faked. Concretely still missing:
   triangle, `x[n]`/`y[n]`-on-edge, ...) beyond what a stencil already
   renders itself, and the optional experimental WASM-TeX fallback.
 - **The rest of vector export (§11, Phase 10): PNG@DPI, EPS/PS, and
-  print dialogs, plus a UI entry point for the exports that do
-  exist.** TikZ and PDF export are both done as library functions (see
-  above), and Phase 1's SVG native/plain export already existed — but
-  none of the three have an "Export" ribbon item calling them yet, the
-  same gap the equation dialog closed for `sd_latex`'s compile
-  pipeline.
+  print dialogs.** TikZ and PDF export are both done, and PDF now has a
+  ribbon UI entry point too (see above) — SVG native/plain export
+  (Phase 1) and TikZ still don't have one (TikZ's own output is meant
+  to be pasted into a LaTeX document, so a file-save dialog isn't
+  obviously the right UI for it anyway; SVG's is a smaller, real gap).
+  There's also no real native file-save picker anywhere yet — every
+  export path that needs one uses a plain text field for the output
+  path instead.
 - **Polish (§11, Phase 11)**: autosave, templates, dark mode, i18n,
   accessibility, perf tuning at the ≥10,000-element scale, tablet UX.
 - Within what *is* built: snapping, orthogonal connector routing
@@ -438,9 +460,9 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_render        # ✅ Phase 2 (+connectors) — scene, pan/zoom, selection, port-to-port wiring
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
-/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert), equation dialog, palette/tree/inspector/problems/H(z)/pole-zero/Bode
+/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), equation+PDF-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
-/packages/sd_export        # ✅ Phase 10 (partial) — TikZ+PDF export, pdflatex-verified; PNG/EPS/print + UI entry point pending
+/packages/sd_export        # ✅ Phase 10 (partial) — TikZ+PDF export (PDF has a ribbon UI entry point), pdflatex-verified; PNG/EPS/print pending
 /packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app
 /plugins/sd_pen_*           # placeholder READMEs — Phase 6 native pen plugins
 /docs                       # architecture-mining notes (§1) + this project's own notes
@@ -694,6 +716,24 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   giving both files one real shared source of truth for the number
   itself, even though the *expression* combining it is written out
   twice.
+- **`Isolate.run` does not reliably complete when called from inside a
+  `testWidgets` test — any function built on it needs an injectable
+  seam if a dialog around it is going to have real widget tests.**
+  Discovered the hard way: an early `ExportPdfDialog` test called the
+  real `exportToPdf` directly and hung indefinitely — `ps` during the
+  hang showed `flutter_tester` running but no `pdflatex` process ever
+  spawned, meaning the isolate spawn/handoff itself never completed
+  inside that specialized test-hosting engine (a normal Dart VM process
+  or a real running app doesn't have this problem — `sd_export`'s own
+  plain, non-widget `pdf_export_test.dart` calls `exportToPdf` for real
+  without issue). `InsertLatexDialog` had already sidestepped this via
+  an injectable `LatexRenderCache` rather than calling
+  `compileLatexToSvg` directly, but not for this reason on record —
+  this was the first time the underlying constraint got hit and
+  understood directly. `ExportPdfDialog.exportPdf` is now the same
+  shape of seam (default: the real `exportToPdf`); a future dialog
+  wrapping any other `Isolate.run`-based pipeline should follow the
+  same pattern from the start rather than rediscover this.
 
 ## Build & test
 

@@ -50,4 +50,23 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Insert Equation'), findsOneWidget);
   });
+
+  testWidgets('the Export ribbon opens the PDF export dialog', (tester) async {
+    await tester.pumpWidget(const SigmaDrawApp());
+
+    await tester.tap(find.text('Export'));
+    await tester.pump();
+    await tester.tap(find.text('PDF'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Export to PDF'), findsOneWidget);
+    // Doesn't go on to tap the dialog's own Export button: that would
+    // invoke the real exportToPdf, which spawns pdflatex via
+    // Isolate.run — not reliable from inside a widget test (see
+    // ExportPdfDialog.exportPdf's doc comment). The real pipeline is
+    // fully covered in sd_export's own plain (non-widget) tests, and
+    // this dialog's own reaction to success/failure is covered in
+    // sd_ui's export_pdf_dialog_test.dart via an injected fake.
+  });
 }
