@@ -690,11 +690,25 @@ faked. Concretely still missing:
   biquad cascade/parallel, comb, allpass, CIC, the coupled/normalized
   (all-pole, then pole-and-zero) lattice, and state-space (A,B,C,D)
   are all generated (see above) — only wave-digital forms remain
-  unbuilt from §5.5, the one generator family here that's a genuinely
-  different shape of problem than everything else built so far: wave-
-  digital filters are built from adaptors (series/parallel, modeling
-  wave variables on transmission-line-like ports), not this project's
-  gain/delay/adder primitives.
+  unbuilt from §5.5, and investigating it surfaced a real prerequisite,
+  not just "a different primitive vocabulary": a wave-digital adaptor
+  (series/parallel) is inherently a multi-input/multi-output block —
+  each output wave a *different* linear combination of the *same*
+  input waves, exactly the shape `transforms.dart`'s own radix-2
+  `butterfly` stencil already has, whose doc comment already flags
+  that `sd_graph`'s Mason engine tracks paths/loops by block id, not
+  by `(block, port)` pair, so a diagram where two different output
+  ports' paths reconverge — structurally unavoidable in any real WDF
+  adaptor network, not an edge case — may not get a fully correct
+  `H(z)` until that engine is made port-aware. Building adaptor
+  stencils now would mean shipping something this project couldn't
+  verify to the same standard as everything above (real, independently
+  hand-derived `H(z)` checks) — so, the same call already made for
+  print dialogs and the native pen plugins, it's left undone rather
+  than shipped shallow; making Mason port-aware is the real
+  prerequisite, and is its own separate undertaking on `sd_graph`'s
+  core (touched by pole-zero/Bode/Nyquist/spectrogram alike), not a
+  `filter_templates.dart`-sized addition.
   §5.7 (comms/modulation — mixer, NCO, PLL, Costas loop, ...) and §5.8
   (adaptive/statistical — LMS/RLS, ...) are entirely unimplemented.
   §5.11's
