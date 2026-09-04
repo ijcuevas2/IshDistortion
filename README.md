@@ -283,12 +283,12 @@ Built and verified so far (each gate below is green — see "Build & test"):
   eyeballed against the circle. A 5th app tab, "Pole-Zero", makes it
   reachable in the running app. 38 new tests (24 `sd_graph`, 8
   `sd_render`, 5 `sd_ui`, 1 the app).
-  Not implemented at the time: the rest of §5.11's analysis plots (Bode
-  and Nyquist landed in later checkpoints — see below; a spectrogram,
-  which needs an actual sampled signal to analyze rather than only a
-  symbolic transfer function, remains unbuilt) and hierarchical/
-  subsystem-aware analysis (the same scope cut Mason's formula itself
-  already documents).
+  Not implemented at the time: the rest of §5.11's analysis plots (Bode,
+  Nyquist, and a spectrogram — which needs an actual sampled signal to
+  analyze rather than only a symbolic transfer function — all landed in
+  later checkpoints; see below) and hierarchical/subsystem-aware
+  analysis (the same scope cut Mason's formula itself already
+  documents).
 - **§5.11 — Bode plot, evaluating that same H(z) around the unit
   circle instead of solving it for roots.** `sd_graph` gained
   `computeBodePlot`: magnitude (dB) and *unwrapped* phase (degrees) of
@@ -506,10 +506,39 @@ Built and verified so far (each gate below is green — see "Build & test"):
   `sd_export` tests (real, compiling end-to-end, checking an actual
   non-degenerate bounding box — not just "a file came out"), 7 new
   `sd_ui` tests, 1 new app test.
+- **Phase 7/11 — the spectrogram plot, closing out §5.11 entirely.**
+  Unlike pole-zero/Bode/Nyquist (all three only ever evaluate `H(z)`
+  itself, symbolically or at points), a spectrogram is fundamentally a
+  property of a *signal* — so `sd_graph` gained
+  `simulateDifferenceEquation` (reads `H(z)` via the same
+  `rationalPolynomials` sparse `z^-1`-power maps Bode/Nyquist evaluate,
+  normalizes to a dense, `a[0]`-divided direct-form recursion, and runs
+  it sample-by-sample against a real input signal — samples before
+  index 0 treated as zero, i.e. the filter starts at rest),
+  `generateChirp` (a linear DC-to-Nyquist sweep, `x[n] = sin(pi*n^2 /
+  (2*(N-1)))` — deliberately not a fixed tone or noise: sweeping any
+  LTI filter with a full-spectrum signal and watching what survives at
+  each output *time* visibly reveals its passband, in a way one static
+  Bode curve doesn't), a direct `O(n^2)` `dft` (not an FFT — this
+  project's STFT window sizes are small enough, tens to a few hundred
+  samples, that the simpler, directly-verifiable direct sum is plenty
+  fast, and nothing else here needs a general FFT), and
+  `computeSpectrogram` itself (Hann-windowed STFT of `H`'s simulated
+  chirp response, one-sided bins via the same conjugate-symmetry
+  reasoning `computeNyquistPlot` already uses the other direction).
+  `sd_render` gained `SpectrogramPainter` (time left-to-right, DC-to-
+  Nyquist bottom-to-top — matching the pole-zero/Nyquist painters'
+  "up is higher" convention — magnitude as a two-stop heatmap color;
+  reuses `bodeAxisRange` for its own dB range rather than a second
+  near-identical implementation); `sd_ui`'s new `SpectrogramPanel`
+  mirrors `BodePanel`/`NyquistPanel`'s message-state pattern exactly.
+  Wired as the app's 8th tab — §5.11's "Analysis Plot" section (pole-
+  zero, Bode, Nyquist, spectrogram) now has every plot it names built.
+  18 new `sd_graph` tests, 10 new `sd_render` tests, 5 new `sd_ui`
+  tests, 1 new app test.
 
-**Next, if this continues**: the 5 native pen plugins (6/7), print
-export (10), §5.11's spectrogram plot, and polish (11) are all **not
-started**, and §5.5/§5.7/§5.8 remain thin.
+**Next, if this continues**: the 5 native pen plugins (6/7) and print
+export (10) are all **not started**, and §5.5/§5.7/§5.8 remain thin.
 Given the true scope of §0-§15 (a
 production, cross-platform, multi-native-plugin app), these were not
 attempted in the interest of not shipping shallow/fake versions of
@@ -545,15 +574,15 @@ faked. Concretely still missing:
   anyway, so the other 4 couldn't have been compiled or tested here
   even if written, and Linux's own pen support (§7: libinput/XInput2/
   Wayland tablet_v2) is a real native-code undertaking on its own.
-- **The rest of §5.5/§5.7/§5.8/§5.11 (Phase 7).** §5.5's FIR/biquad/
-  cascade are generated (see above) but lattice/parallel/wave-digital/
-  comb/CIC/state-space forms aren't; §5.7 (comms/modulation — mixer,
-  NCO, PLL, Costas loop, ...) and §5.8 (adaptive/statistical — LMS/RLS,
-  ...) are entirely unimplemented. §5.11's pole-zero, Bode, and Nyquist
-  plots are all done (see above) — only a spectrogram plot isn't (and,
-  unlike the other three, needs an actual sampled signal to analyze
-  rather than only a symbolic transfer function, so it's a different
-  shape of feature, not just "one more plot"). None of the filter
+- **The rest of §5.5/§5.7/§5.8 (Phase 7); §5.11 is now fully done.**
+  §5.5's FIR/biquad/cascade are generated (see above) but lattice/
+  parallel/wave-digital/comb/CIC/state-space forms aren't; §5.7 (comms/
+  modulation — mixer, NCO, PLL, Costas loop, ...) and §5.8 (adaptive/
+  statistical — LMS/RLS, ...) are entirely unimplemented. §5.11's
+  "Analysis Plot" section (pole-zero, Bode, Nyquist, and now
+  spectrogram — see above) has every plot it names built — at the time
+  the bullet above this one was written, only the spectrogram was still
+  missing; that landed in a later checkpoint. None of the filter
   generators have a palette/drag-to-canvas entry point yet either —
   they're called directly (as the tests do); wiring one into
   `StencilPalette`/`StencilCanvasArea` (which only knows single-block
@@ -587,12 +616,12 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 ```
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
-/packages/sd_graph         # ✅ Phase 4+8+5.11 — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist
+/packages/sd_graph         # ✅ Phase 4+8+5.11 (done) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram
 /packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR/biquad/cascade generators
-/packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist painters
+/packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, done) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
-/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF/EPS/PNG-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode/Nyquist
+/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF/EPS/PNG-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode/Nyquist/spectrogram
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
 /packages/sd_export        # ✅ Phase 10 (partial) — TikZ+PDF+EPS+PNG export (PDF/EPS/PNG have ribbon UI entry points); print pending
 /packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app
@@ -961,6 +990,36 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   `exportToPdf` via a new, non-private `compileTexToPdfInDirectory`
   (the same reasoning `svgUnitsPerCm` already established for sharing
   one file's internals with another in this package).
+- **A spectrogram needs an actual sampled signal, so `computeSpectrogram`
+  manufactures one — a chirp, not noise, a fixed tone, or silence.**
+  Pole-zero/Bode/Nyquist all only ever evaluate `H(z)` itself
+  (symbolically, or at specific points on the unit circle); a
+  spectrogram is inherently a property of a signal's time-varying
+  spectrum, so there's no `H(z)`-only equivalent to fall back on. A
+  linear DC-to-Nyquist chirp is the deliberate choice of *which* signal:
+  driving any LTI filter with a full-spectrum sweep and watching which
+  frequencies survive at which output *time* is a standard way to make
+  a filter's passband visible directly in the plot (it visibly fades in
+  and out as the sweep passes through the passband) — a single fixed
+  tone would only test one frequency, and noise/silence wouldn't show
+  the passband's edges as cleanly or wouldn't excite the filter at all.
+- **`dft` is a direct `O(n^2)` sum, not an FFT — and `computeSpectrogram`
+  reports only one-sided bins, via the same conjugate-symmetry
+  reasoning `computeNyquistPlot` already uses.** This project's STFT
+  window sizes are small (tens to a few hundred samples), so the
+  simpler, directly-verifiable direct sum is plenty fast, and there's no
+  other need for a general FFT anywhere else in the codebase yet —
+  adding one just for this would be speculative generality. Each frame
+  is Hann-windowed before its `dft` (reducing the spectral leakage a
+  bare rectangular window would otherwise show at each frame's edges),
+  and — since the simulated response is real-valued, so its spectrum is
+  conjugate-symmetric, the same fact `computeNyquistPlot` exploits the
+  *other* direction to get the `ω < 0` half for free — only bins `0`
+  through `windowSize/2` are reported; the negative-frequency half would
+  be redundant. `spectrogramMagnitudeRange` also reuses `bodeAxisRange`
+  directly for its own dB-range-with-padding-and-cap logic rather than
+  a second near-identical implementation, the same `svgUnitsPerCm`-style
+  sharing as the bullet above.
 
 ## Build & test
 

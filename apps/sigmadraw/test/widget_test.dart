@@ -50,6 +50,19 @@ void main() {
     expect(find.text('Nyquist'), findsWidgets);
   });
 
+  testWidgets('the Spectrogram tab is reachable without error', (tester) async {
+    await tester.pumpWidget(const SigmaDrawApp());
+
+    await tester.tap(find.text('Spectrogram'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    // Same "findsWidgets, not findsOneWidget" reasoning as the Pole-Zero/
+    // Bode/Nyquist tabs above: SpectrogramPanel's own in-body heading is
+    // a second match once its message branch doesn't apply.
+    expect(find.text('Spectrogram'), findsWidgets);
+  });
+
   testWidgets('the Insert ribbon opens the equation dialog', (tester) async {
     await tester.pumpWidget(const SigmaDrawApp());
 

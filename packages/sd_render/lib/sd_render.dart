@@ -27,4 +27,5 @@ export 'src/selection/selection_model.dart';
 export 'src/selection/selection_overlay_painter.dart';
 export 'src/selection_actions.dart';
 export 'src/sigma_canvas.dart';
+export 'src/spectrogram_painter.dart';
 export 'src/viewport.dart';

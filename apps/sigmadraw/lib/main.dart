@@ -432,7 +432,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                           // existing State — a fresh key forces a clean
                           // remount bound to the new document instead.
                           key: ValueKey(_document),
-                          length: 7,
+                          length: 8,
                           child: Column(
                             children: [
                               const TabBar(
@@ -445,6 +445,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                                   Tab(text: 'Pole-Zero'),
                                   Tab(text: 'Bode'),
                                   Tab(text: 'Nyquist'),
+                                  Tab(text: 'Spectrogram'),
                                 ],
                               ),
                               Expanded(
@@ -468,6 +469,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                                     PoleZeroPanel(document: _document),
                                     BodePanel(document: _document),
                                     NyquistPanel(document: _document),
+                                    SpectrogramPanel(document: _document),
                                   ],
                                 ),
                               ),
