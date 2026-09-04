@@ -836,3 +836,340 @@ FilterStructure buildBiquadCascade({
     outputPortId: previous.outputPortId,
   );
 }
+
+/// §5.5: parallel form (SOS) — feeds every [buildBiquadDf2t] stage the
+/// *same* input (fanned out from one pickoff, unlike
+/// [buildBiquadCascade]'s output-to-input chaining) and sums their
+/// outputs, so the overall `H(z)` is the *sum* of each stage's rather
+/// than the cascade's product.
+FilterStructure buildBiquadParallel({
+  required String idPrefix,
+  required List<Sos> sections,
+  double x = 0,
+  double y = 0,
+}) {
+  if (sections.isEmpty) {
+    throw ArgumentError.value(sections, 'sections', 'must not be empty');
+  }
+  final elements = <SdElement>[];
+  var seq = 0;
+  String nextId(String kind) => '$idPrefix-$kind${seq++}';
+  void wire(String from, String fromPort, String to, String toPort) =>
+      elements.add(
+        buildEdge(
+          id: nextId('e'),
+          fromBlock: from,
+          fromPort: fromPort,
+          toBlock: to,
+          toPort: toPort,
+        ),
+      );
+  const stageWidth = _stageDx * 6;
+
+  final tapId = nextId('tap');
+  elements.add(
+    pickoffNode.instantiate(instanceId: tapId, x: x, y: y + 3 * _stageDy),
+  );
+
+  final stageOutputs = <(String, String)>[];
+  for (var i = 0; i < sections.length; i++) {
+    final s = sections[i];
+    final stage = buildBiquadDf2t(
+      idPrefix: '$idPrefix-s$i',
+      b0: s.b0,
+      b1: s.b1,
+      b2: s.b2,
+      a1: s.a1,
+      a2: s.a2,
+      x: x + stageWidth,
+      y: y + i * 6 * _stageDy,
+    );
+    elements.addAll(stage.elements);
+    wire(tapId, 'out1', stage.inputBlockId, stage.inputPortId);
+    stageOutputs.add((stage.outputBlockId, stage.outputPortId));
+  }
+
+  var (accId, accPort) = stageOutputs[0];
+  for (var i = 1; i < stageOutputs.length; i++) {
+    final (outId, outPort) = stageOutputs[i];
+    final addId = nextId('add');
+    elements.add(
+      adder.instantiate(
+        instanceId: addId,
+        x: x + stageWidth * 2,
+        y: y + i * 6 * _stageDy,
+      ),
+    );
+    wire(accId, accPort, addId, 'in1');
+    wire(outId, outPort, addId, 'in2');
+    accId = addId;
+    accPort = 'out1';
+  }
+
+  return FilterStructure(
+    elements: elements,
+    inputBlockId: tapId,
+    inputPortId: 'in1',
+    outputBlockId: accId,
+    outputPortId: accPort,
+  );
+}
+
+/// §5.5: comb filter — feedforward/FIR (`feedback: false`, the
+/// default): `y[n] = x[n] + gainCoefficient·x[n-delaySamples]`, i.e.
+/// `H(z) = 1 + gainCoefficient·z⁻ᴹ`. Feedback/recursive/IIR
+/// (`feedback: true`): `y[n] = x[n] + gainCoefficient·y[n-delaySamples]`,
+/// i.e. `H(z) = 1 / (1 - gainCoefficient·z⁻ᴹ)` (the sign flip between
+/// the two forms' `H(z)` is just how that algebra falls out of "plain
+/// addition" in both recursions, not an inconsistency).
+///
+/// Uses a single [delay] block with its own `k` param set directly to
+/// [delaySamples] — Mason already reads a delay's `k` as `z^-k` (see
+/// `mason.dart`), so this needs no `delaySamples`-long chain of unit
+/// delays the way e.g. [buildFirDirectForm] deliberately builds one,
+/// tap by tap, for a different reason entirely (exposing every
+/// intermediate tap for its own per-coefficient gain). A comb only
+/// ever needs the one, fully-delayed tap.
+FilterStructure buildCombFilter({
+  required String idPrefix,
+  required int delaySamples,
+  required num gainCoefficient,
+  bool feedback = false,
+  double x = 0,
+  double y = 0,
+}) {
+  if (delaySamples < 1) {
+    throw ArgumentError.value(
+      delaySamples,
+      'delaySamples',
+      'must be at least 1',
+    );
+  }
+  final elements = <SdElement>[];
+  var seq = 0;
+  String nextId(String kind) => '$idPrefix-$kind${seq++}';
+  void wire(String from, String fromPort, String to, String toPort) =>
+      elements.add(
+        buildEdge(
+          id: nextId('e'),
+          fromBlock: from,
+          fromPort: fromPort,
+          toBlock: to,
+          toPort: toPort,
+        ),
+      );
+
+  final tapId = nextId('tap');
+  elements.add(
+    pickoffNode.instantiate(instanceId: tapId, x: x, y: y + _stageDy),
+  );
+
+  final delayId = nextId('d');
+  elements.add(
+    delay.instantiate(
+      instanceId: delayId,
+      x: x + _stageDx,
+      y: y + 2 * _stageDy,
+      params: {'k': delaySamples},
+    ),
+  );
+
+  final gainId = nextId('g');
+  elements.add(
+    gain.instantiate(
+      instanceId: gainId,
+      x: x + 2 * _stageDx,
+      y: y + 2 * _stageDy,
+      params: {'gain': gainCoefficient},
+      label: 'g',
+    ),
+  );
+  wire(delayId, 'out1', gainId, 'in1');
+
+  final addId = nextId('add');
+  elements.add(adder.instantiate(instanceId: addId, x: x + 2 * _stageDx, y: y));
+  wire(tapId, 'out1', addId, 'in1');
+  wire(gainId, 'out1', addId, 'in2');
+
+  if (feedback) {
+    // y[n] = x[n] + gain*y[n-M]: the delay reads the FINAL output, not
+    // the raw input — wired last, since `addId` (the final node) isn't
+    // created until just above. The real signal graph has no cycle
+    // problem (the delay breaks it), only construction order would.
+    wire(addId, 'out1', delayId, 'in1');
+  } else {
+    // y[n] = x[n] + gain*x[n-M]: the delay reads the raw input directly.
+    wire(tapId, 'out1', delayId, 'in1');
+  }
+
+  return FilterStructure(
+    elements: elements,
+    inputBlockId: tapId,
+    inputPortId: 'in1',
+    outputBlockId: addId,
+    outputPortId: 'out1',
+  );
+}
+
+/// §5.5: allpass filter (1st order) — `H(z) = (coefficient + z⁻¹) / (1
+/// + coefficient·z⁻¹)`, real-coefficient allpass's defining property
+/// (`|H(e^{jω})| = 1` for every `ω`, for ANY real `coefficient` — only
+/// phase varies with frequency) confirmed algebraically in this
+/// function's own test by expanding `|numerator|²` and
+/// `|denominator|²` and finding them identical. Implemented as a thin,
+/// honest wrapper over [buildIirDirectFormII] (`b: [coefficient, 1]`,
+/// `a: [coefficient]`) rather than a second hand-wired topology for
+/// what is, structurally, just a specific order-1 case of it. A
+/// higher-order allpass can be built by cascading multiple calls (wire
+/// one's output to the next's input, the same way [buildBiquadCascade]
+/// chains stages) — not built as its own generator here since the spec
+/// gives this stencil family no more elaboration than "allpass" itself.
+FilterStructure buildAllpassFilter({
+  required String idPrefix,
+  required num coefficient,
+  double x = 0,
+  double y = 0,
+}) => buildIirDirectFormII(
+  idPrefix: idPrefix,
+  b: [coefficient, 1],
+  a: [coefficient],
+  x: x,
+  y: y,
+);
+
+/// §5.5: CIC (cascaded-integrator-comb / Hogenauer) filter — [stages]
+/// (`N`) cascaded integrator sections (`y[n] = x[n] + y[n-1]`, i.e.
+/// `H(z) = 1/(1-z⁻¹)` each) at the input rate, then — if [decimation]
+/// (`R`) is greater than 1 — a real [downsampler] block by that
+/// factor, then [stages] cascaded comb sections (`y[n] = x[n] -
+/// x[n-differentialDelay]`, i.e. `H(z) = 1-z⁻ᴰ` each, `differentialDelay`
+/// is CIC's own `M`, typically 1 or 2) at the (now decimated) rate.
+///
+/// KNOWN, DOCUMENTED LIMITATION, the same one `sd_graph`'s own rate-
+/// propagation already documents (see README.md's "Architecture
+/// decisions"): `computeTransferFunction` doesn't model a
+/// [downsampler] as anything but unity gain, so it cannot report ONE
+/// meaningful combined `H(z)` across a genuinely decimating
+/// (`decimation > 1`) CIC filter — true multirate transfer-function
+/// analysis is out of scope for this project so far. What this
+/// function's own tests verify instead: the integrator cascade's own
+/// `H(z) = 1/(1-z⁻¹)^N` and the comb cascade's own `H(z) =
+/// (1-z⁻ᴰ)^N`, each independently correct on its own (neither crosses
+/// the rate change); a `decimation: 1` CIC filter has no [downsampler]
+/// in it at all, so its FULL, combined `H(z)` — the product of both
+/// halves — is exactly the meaningful, end-to-end result this
+/// project's Mason engine can and does report correctly; and that a
+/// genuinely decimating (`decimation > 1`) structure still validates
+/// as a real, correctly-wired, no-algebraic-loop diagram.
+FilterStructure buildCicFilter({
+  required String idPrefix,
+  required int stages,
+  required int decimation,
+  int differentialDelay = 1,
+  double x = 0,
+  double y = 0,
+}) {
+  if (stages < 1) {
+    throw ArgumentError.value(stages, 'stages', 'must be at least 1');
+  }
+  if (decimation < 1) {
+    throw ArgumentError.value(decimation, 'decimation', 'must be at least 1');
+  }
+  if (differentialDelay < 1) {
+    throw ArgumentError.value(
+      differentialDelay,
+      'differentialDelay',
+      'must be at least 1',
+    );
+  }
+  final elements = <SdElement>[];
+  var seq = 0;
+  String nextId(String kind) => '$idPrefix-$kind${seq++}';
+  void wire(String from, String fromPort, String to, String toPort) =>
+      elements.add(
+        buildEdge(
+          id: nextId('e'),
+          fromBlock: from,
+          fromPort: fromPort,
+          toBlock: to,
+          toPort: toPort,
+        ),
+      );
+
+  final tapId = nextId('tap');
+  elements.add(
+    pickoffNode.instantiate(instanceId: tapId, x: x, y: y + 2 * _stageDy),
+  );
+  var curId = tapId;
+  var curPort = 'out1';
+
+  for (var i = 0; i < stages; i++) {
+    final stageX = x + (i + 1) * _stageDx;
+    final d = nextId('d');
+    elements.add(
+      delay.instantiate(instanceId: d, x: stageX, y: y + 4 * _stageDy),
+    );
+    final add = nextId('add');
+    elements.add(
+      adder.instantiate(instanceId: add, x: stageX, y: y + 2 * _stageDy),
+    );
+    wire(curId, curPort, add, 'in1');
+    wire(d, 'out1', add, 'in2');
+    wire(add, 'out1', d, 'in1');
+    curId = add;
+    curPort = 'out1';
+  }
+
+  final decimatedX = x + (stages + 1) * _stageDx;
+  if (decimation > 1) {
+    final ds = nextId('ds');
+    elements.add(
+      downsampler.instantiate(
+        instanceId: ds,
+        x: decimatedX,
+        y: y + 2 * _stageDy,
+        params: {'M': decimation},
+      ),
+    );
+    wire(curId, curPort, ds, 'in1');
+    curId = ds;
+    curPort = 'out1';
+  }
+
+  for (var i = 0; i < stages; i++) {
+    final stageX = decimatedX + (i + 1) * _stageDx;
+    final d = nextId('d');
+    elements.add(
+      delay.instantiate(
+        instanceId: d,
+        x: stageX,
+        y: y + 4 * _stageDy,
+        params: {'k': differentialDelay},
+      ),
+    );
+    wire(curId, curPort, d, 'in1');
+    final add = nextId('add');
+    elements.add(
+      adder.instantiate(
+        instanceId: add,
+        x: stageX,
+        y: y + 2 * _stageDy,
+        params: {
+          'signs': ['+', '-'],
+        },
+      ),
+    );
+    wire(curId, curPort, add, 'in1');
+    wire(d, 'out1', add, 'in2');
+    curId = add;
+    curPort = 'out1';
+  }
+
+  return FilterStructure(
+    elements: elements,
+    inputBlockId: tapId,
+    inputPortId: 'in1',
+    outputBlockId: curId,
+    outputPortId: curPort,
+  );
+}

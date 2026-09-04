@@ -485,6 +485,238 @@ void main() {
     });
   });
 
+  group('buildBiquadParallel', () {
+    test('a single-section parallel matches a lone biquad exactly', () {
+      const section = (b0: 1.0, b1: 0.3, b2: -0.1, a1: -0.5, a2: 0.2);
+      final parallel = buildBiquadParallel(
+        idPrefix: 'par',
+        sections: [section],
+      );
+      final lone = buildBiquadDf2t(
+        idPrefix: 'lone',
+        b0: section.b0,
+        b1: section.b1,
+        b2: section.b2,
+        a1: section.a1,
+        a2: section.a2,
+      );
+
+      final parallelResult = computeTransferFunction(
+        SignalGraph.fromDocument(_wrapWithSourceSink(parallel)),
+      )!;
+      final loneResult = computeTransferFunction(
+        SignalGraph.fromDocument(_wrapWithSourceSink(lone)),
+      )!;
+
+      for (final z in [2.0, 3.3]) {
+        expect(
+          parallelResult.h.evaluate({}, z: z),
+          closeTo(loneResult.h.evaluate({}, z: z), 1e-9),
+        );
+      }
+    });
+
+    test("a two-section parallel sums each section's H(z)", () {
+      const s1 = (b0: 1.0, b1: 0.2, b2: 0.0, a1: -0.4, a2: 0.0);
+      const s2 = (b0: 1.0, b1: -0.3, b2: 0.05, a1: 0.2, a2: -0.1);
+      final structure = buildBiquadParallel(
+        idPrefix: 'par',
+        sections: [s1, s2],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      num sectionH(Sos s, num z) {
+        final zInv = _powInv(z, 1);
+        return (s.b0 + s.b1 * zInv + s.b2 * zInv * zInv) /
+            (1 + s.a1 * zInv + s.a2 * zInv * zInv);
+      }
+
+      for (final z in [2.0, 5.0, -1.5]) {
+        final expected = sectionH(s1, z) + sectionH(s2, z);
+        expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+      }
+    });
+
+    test('rejects an empty section list', () {
+      expect(
+        () => buildBiquadParallel(idPrefix: 'x', sections: []),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('buildCombFilter', () {
+    test(
+      'produces a graph with no algebraic loop, feedforward or feedback',
+      () {
+        for (final feedback in [false, true]) {
+          final structure = buildCombFilter(
+            idPrefix: 'comb',
+            delaySamples: 4,
+            gainCoefficient: 0.5,
+            feedback: feedback,
+          );
+          final doc = _wrapWithSourceSink(structure);
+          expect(detectAlgebraicLoops(SignalGraph.fromDocument(doc)), isEmpty);
+        }
+      },
+    );
+
+    test('feedforward form matches H(z) = 1 + gain*z^-delaySamples', () {
+      for (final (delaySamples, gain) in [(1, 0.5), (4, -0.3), (8, 1.0)]) {
+        final structure = buildCombFilter(
+          idPrefix: 'comb',
+          delaySamples: delaySamples,
+          gainCoefficient: gain,
+        );
+        final doc = _wrapWithSourceSink(structure);
+        final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+        for (final z in [2.0, 5.0, -3.0]) {
+          final expected = 1 + gain * _powInv(z, delaySamples);
+          expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+        }
+      }
+    });
+
+    test('feedback form matches H(z) = 1 / (1 - gain*z^-delaySamples)', () {
+      for (final (delaySamples, gain) in [(1, 0.5), (4, -0.3), (8, 0.2)]) {
+        final structure = buildCombFilter(
+          idPrefix: 'comb',
+          delaySamples: delaySamples,
+          gainCoefficient: gain,
+          feedback: true,
+        );
+        final doc = _wrapWithSourceSink(structure);
+        final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+        for (final z in [2.0, 5.0, -3.0]) {
+          final expected = 1 / (1 - gain * _powInv(z, delaySamples));
+          expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+        }
+      }
+    });
+
+    test('rejects a delaySamples less than 1', () {
+      expect(
+        () =>
+            buildCombFilter(idPrefix: 'x', delaySamples: 0, gainCoefficient: 1),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('buildAllpassFilter', () {
+    test('produces a graph with no algebraic loop', () {
+      final structure = buildAllpassFilter(idPrefix: 'ap', coefficient: 0.4);
+      final doc = _wrapWithSourceSink(structure);
+      expect(detectAlgebraicLoops(SignalGraph.fromDocument(doc)), isEmpty);
+    });
+
+    test('H(z) matches the textbook (coefficient + z^-1) / '
+        '(1 + coefficient*z^-1) formula', () {
+      const c = 0.4;
+      final structure = buildAllpassFilter(idPrefix: 'ap', coefficient: c);
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      for (final z in [2.0, 5.0, -3.0, -2.0]) {
+        final zInv = _powInv(z, 1);
+        final expected = (c + zInv) / (1 + c * zInv);
+        expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+      }
+    });
+
+    test('the magnitude response is exactly 0dB (|H|=1) at every '
+        'frequency, for any real coefficient — the defining allpass '
+        'property', () {
+      for (final c in [0.3, -0.5, 0.9, -0.1]) {
+        final structure = buildAllpassFilter(idPrefix: 'ap', coefficient: c);
+        final doc = _wrapWithSourceSink(structure);
+        final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+        final points = computeBodePlot(result.h, pointCount: 50)!;
+
+        for (final p in points) {
+          expect(
+            p.magnitudeDb,
+            closeTo(0, 1e-6),
+            reason: 'coefficient=$c omega=${p.omega}',
+          );
+        }
+      }
+    });
+  });
+
+  group('buildCicFilter', () {
+    test('decimation:1 (no downsampler at all) gives the full, meaningful '
+        'combined H(z) = ((1-z^-differentialDelay)/(1-z^-1))^stages', () {
+      for (final (stages, differentialDelay) in [
+        (1, 1),
+        (2, 1),
+        (1, 2),
+        (3, 2),
+      ]) {
+        final structure = buildCicFilter(
+          idPrefix: 'cic',
+          stages: stages,
+          decimation: 1,
+          differentialDelay: differentialDelay,
+        );
+        final doc = _wrapWithSourceSink(structure);
+        final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+        // Not z=1: that's the integrator's own pole (1-z^-1=0 there).
+        for (final z in [2.0, 5.0, -3.0]) {
+          final zInv = _powInv(z, 1);
+          final combH = 1 - _powInv(z, differentialDelay);
+          final integratorH = 1 - zInv;
+          num expected = 1;
+          for (var s = 0; s < stages; s++) {
+            expected *= combH / integratorH;
+          }
+          expect(
+            result.h.evaluate({}, z: z),
+            closeTo(expected, 1e-9),
+            reason: 'stages=$stages differentialDelay=$differentialDelay z=$z',
+          );
+        }
+      }
+    });
+
+    test('a genuinely decimating structure (decimation>1) still validates '
+        'as a real, correctly-wired, no-algebraic-loop diagram', () {
+      final structure = buildCicFilter(
+        idPrefix: 'cic',
+        stages: 2,
+        decimation: 4,
+        differentialDelay: 2,
+      );
+      final doc = _wrapWithSourceSink(structure);
+      expect(detectAlgebraicLoops(SignalGraph.fromDocument(doc)), isEmpty);
+    });
+
+    test('rejects invalid stages/decimation/differentialDelay', () {
+      expect(
+        () => buildCicFilter(idPrefix: 'x', stages: 0, decimation: 1),
+        throwsArgumentError,
+      );
+      expect(
+        () => buildCicFilter(idPrefix: 'x', stages: 1, decimation: 0),
+        throwsArgumentError,
+      );
+      expect(
+        () => buildCicFilter(
+          idPrefix: 'x',
+          stages: 1,
+          decimation: 1,
+          differentialDelay: 0,
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
   test('buildFirDirectForm rejects an empty coefficient list', () {
     expect(
       () => buildFirDirectForm(idPrefix: 'x', coefficients: []),

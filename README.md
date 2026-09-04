@@ -83,9 +83,10 @@ Built and verified so far (each gate below is green — see "Build & test"):
   coefficient sets and evaluation points each. Not implemented at the
   time: §5.7 (comms/modulation), §5.8 (adaptive/statistical), §5.11
   (analysis-plot objects — all four landed in later checkpoints; see
-  above), and the rest of §5.5 (transposed FIR and lattice landed
-  later too, see below; parallel/wave-digital/comb/CIC/state-space
-  remain unbuilt). 33 new tests.
+  above), and the rest of §5.5 (transposed FIR, lattice, DF-I/II,
+  parallel, comb, allpass, and CIC all landed later too, see below;
+  only wave-digital/coupled-lattice/state-space remain unbuilt). 33
+  new tests.
 - **Phase 10 (partial) — TikZ export.** `packages/sd_export`:
   `exportToTikz` walks the semantic graph (`sd_graph`) and emits
   standard-TikZ source (not the rarely-installed `tikz-dsp` package) —
@@ -565,10 +566,42 @@ Built and verified so far (each gate below is green — see "Build & test"):
   infinity — `closeTo` correctly refuses to call that "close" (the
   difference is `NaN`), so the fix was picking a different sample
   point, not the implementation. 19 new `sd_stencils` tests.
+- **Phase 7 — parallel, comb, allpass, and CIC, four more §5.5
+  structures.** `buildBiquadParallel` fans one input into every
+  section directly (unlike `buildBiquadCascade`'s output-to-input
+  chaining) and sums the outputs, so `H(z)` is a *sum* of each
+  section's rather than a product — verified against the sum of each
+  section's independently-computed `H(z)`. `buildCombFilter` covers
+  both feedforward/FIR (`H(z) = 1 + g·z⁻ᴹ`) and feedback/recursive/IIR
+  (`H(z) = 1/(1-g·z⁻ᴹ)`) forms with one `delay` block whose own `k`
+  param is set directly to `M` (Mason already reads a delay's `k` as
+  `z^-k`, so no `M`-long chain of unit delays is needed the way e.g.
+  the FIR generators build one for an unrelated reason — exposing
+  every intermediate tap for its own coefficient). `buildAllpassFilter`
+  is a thin, honest wrapper over `buildIirDirectFormII`
+  (`b: [c, 1], a: [c]`) rather than a second hand-wired topology for
+  what is, structurally, just its own order-1 case — verified two ways:
+  against the textbook formula directly, and (the real defining
+  property of "allpass") that `computeBodePlot`'s own magnitude comes
+  out at exactly 0dB at every one of 50 swept frequencies, for four
+  different coefficients — 200 assertions confirming `|H(e^{jω})|=1`
+  for every `ω`, not simply asserting the formula's own algebra.
+  `buildCicFilter` places `stages` real integrators, an actual
+  `downsampler` block (only when `decimation > 1`), then `stages` real
+  comb sections — a genuinely complete CIC/Hogenauer topology, not a
+  same-rate stand-in — but is honest about a real limit inherited from
+  Phase 4/8's own documented scope cut: `computeTransferFunction`
+  cannot report one meaningful combined `H(z)` across a real rate
+  change, so only `decimation: 1` (no `downsampler` in the diagram at
+  all) is asserted end to end (against the product-of-cascaded-stages
+  closed form); `decimation > 1` is verified structurally (a real,
+  correctly-wired, loop-free diagram) without claiming an `H(z)` this
+  project's Mason engine can't actually give. 13 new `sd_stencils`
+  tests.
 
 **Next, if this continues**: the 5 native pen plugins (6/7) and print
-export (10) are all **not started**; §5.5's parallel/wave-digital/comb/
-CIC/coupled-lattice/state-space forms, §5.7, and §5.8 remain thin/
+export (10) are all **not started**; §5.5's wave-digital/coupled-
+lattice/state-space forms, §5.7, and §5.8 remain thin/
 unstarted.
 Given the true scope of §0-§15 (a
 production, cross-platform, multi-native-plugin app), these were not
@@ -607,10 +640,16 @@ faked. Concretely still missing:
   Wayland tablet_v2) is a real native-code undertaking on its own.
 - **The rest of §5.5/§5.7/§5.8 (Phase 7); §5.11 is now fully done.**
   §5.5's FIR direct/transposed-direct/lattice, biquad DF2T/DF-I/DF-II,
-  and biquad cascade are all generated (see above), but parallel/wave-
-  digital/comb/CIC/coupled-lattice/state-space forms aren't; §5.7 (comms/
-  modulation — mixer, NCO, PLL, Costas loop, ...) and §5.8 (adaptive/
-  statistical — LMS/RLS, ...) are entirely unimplemented. §5.11's
+  biquad cascade/parallel, comb, allpass, and CIC are all generated
+  (see above) — only wave-digital, coupled/normalized lattice, and
+  state-space (A,B,C,D) forms remain unbuilt (all three are a
+  genuinely different shape of problem than every generator built so
+  far: wave-digital filters are built from adaptors, not this
+  project's gain/delay/adder primitives; state-space is naturally
+  matrix-parameterized, not a fixed handful of scalar coefficients).
+  §5.7 (comms/modulation — mixer, NCO, PLL, Costas loop, ...) and §5.8
+  (adaptive/statistical — LMS/RLS, ...) are entirely unimplemented.
+  §5.11's
   "Analysis Plot" section (pole-zero, Bode, Nyquist, and now
   spectrogram — see above) has every plot it names built — at the time
   the bullet above this one was written, only the spectrogram was still
@@ -649,7 +688,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
 /packages/sd_graph         # ✅ Phase 4+8+5.11 (done) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram
-/packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR (direct/transposed/lattice) + IIR (DF-I/II/DF2T/cascade) generators
+/packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR (direct/transposed/lattice) + IIR (DF-I/II/DF2T/cascade/parallel) + comb/allpass/CIC generators
 /packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, done) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
@@ -1076,6 +1115,39 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   all three, for matching coefficients, are cross-checked to produce
   the identical `H(z)` despite realizing it with different numbers and
   arrangements of delays, gains, and adders.
+- **`buildCombFilter` sets a single `delay` block's own `k` param
+  directly to the comb's delay length, rather than chaining that many
+  unit delays the way the FIR generators deliberately do.** Those FIR
+  generators need one node per delay tap because each tap gets its own
+  independent per-coefficient gain; a comb filter only ever reads the
+  *one*, fully-delayed sample, so a single general `z^-k` delay (Mason
+  already reads a delay's own `k` param as `z^-k`, unrelated to this
+  checkpoint) is both simpler and the structurally honest realization
+  — chaining unit delays here would just be a longer way to draw the
+  same thing.
+- **`buildCicFilter` builds a real, decimating CIC topology (integrator
+  stages, an actual `downsampler`, comb stages) rather than quietly
+  downgrading to a same-rate stand-in — but its tests only assert an
+  end-to-end `H(z)` for `decimation: 1`.** `computeTransferFunction`
+  treating a `downsampler` as unity gain is a scope cut this project
+  made back in Phase 4/8, not a new one; asserting a combined `H(z)`
+  across a *real* rate change here would mean testing something Mason
+  doesn't actually attempt to get right, so a `decimation > 1`
+  structure is verified the way it honestly can be (loop-free, validly
+  wired) instead of papering over the gap with a numerically-lucky-
+  looking but physically meaningless assertion.
+- **A real naming-shadow bug, caught by `analyze --fatal-infos` before
+  any test ran.** `buildCombFilter`'s own `gain` parameter (the most
+  natural name for what it is) shadowed the top-level `gain`
+  `StencilDefinition` this same file already imports from
+  `primitives.dart` for every other generator — `gain.instantiate(...)`
+  inside that one function silently resolved to the *parameter*
+  instead, which the analyzer caught immediately as "the method
+  'instantiate' isn't defined for the type 'num'" rather than letting
+  it become a runtime surprise. Fixed by renaming the parameter to
+  `gainCoefficient`, not by prefixing the whole file's `primitives.dart`
+  import (which every other generator in the file already relies on
+  staying unprefixed).
 
 ## Build & test
 
