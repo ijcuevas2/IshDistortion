@@ -84,18 +84,34 @@ Built and verified so far (each gate below is green — see "Build & test"):
   (comms/modulation), §5.8 (adaptive/statistical), §5.11 (analysis-plot
   objects), and the rest of §5.5 (lattice/parallel/wave-digital/comb/CIC,
   state-space). 33 new tests.
+- **Phase 10 (partial) — TikZ export.** `packages/sd_export`:
+  `exportToTikz` walks the semantic graph (`sd_graph`) and emits
+  standard-TikZ source (not the rarely-installed `tikz-dsp` package) —
+  one named, styled node per block (circle for adders/pickoff nodes,
+  triangle for gains, rectangle otherwise) positioned from its resolved
+  world transform, and one `\draw[->] (a) -- (b)` per edge, relying on
+  TikZ's own shape-boundary clipping rather than replicating port
+  geometry. **Verified against §13's own acceptance bar ("TikZ export
+  compiles") by actually invoking `pdflatex`** — not just asserting on
+  the generated string — in a scratch temp directory, on both a small
+  hand-built chain and a full generated `buildBiquadDf2t` filter, and
+  checking a real, non-empty PDF comes out with exit code 0. (The
+  toolchain check is graceful: the two compilation tests skip themselves
+  if `pdflatex` isn't on `PATH`, rather than failing an environment that
+  never had LaTeX installed.) 8 new tests.
 
 **Next, if this continues**: Ribbon UI (5), ink/pen input + 5 native
-plugins (6), LaTeX (9), vector export (10), and polish (11) are all
-**not started**, and §5.5/§5.7/§5.8/§5.11 remain thin (previous bullet).
-Given the true scope of §0-§15 (a production, cross-platform, multi-
-native-plugin app), these were not attempted in the interest of not
-shipping shallow/fake versions of them — see "What's not built" below.
+plugins (6), LaTeX (9), the rest of vector export — PDF/PNG/EPS/print
+(10) —, and polish (11) are all **not started**, and §5.5/§5.7/§5.8/§5.11
+remain thin (previous bullets). Given the true scope of §0-§15 (a
+production, cross-platform, multi-native-plugin app), these were not
+attempted in the interest of not shipping shallow/fake versions of them
+— see "What's not built" below.
 
-`packages/sd_ink`, `sd_input`, `sd_latex`, `sd_export`, and `sd_commands`
-are still empty scaffolds (a `library;` stub, no `test/`), and
-`plugins/sd_pen_*` are placeholder READMEs — see each one for what it'll
-need to become in Phase 6.
+`packages/sd_ink`, `sd_input`, `sd_latex`, and `sd_commands` are still
+empty scaffolds (a `library;` stub, no `test/`), and `plugins/sd_pen_*`
+are placeholder READMEs — see each one for what it'll need to become in
+Phase 6.
 
 ## What's not built (be honest about scope)
 
@@ -126,9 +142,13 @@ faked. Concretely still missing:
   `StencilPalette`/`StencilCanvasArea` (which only knows single-block
   `StencilDefinition`s, not multi-element `FilterStructure`s) is
   unstarted UI work.
-- **LaTeX (§11, Phase 9)**, **vector PDF/EPS/TikZ export and printing**
-  (§11, Phase 10) — Phase 1's SVG native/plain export is the only export
-  path that exists.
+- **LaTeX (§11, Phase 9)** — no `flutter_math_fork` on-screen rendering,
+  no `pdflatex`+`dvisvgm` pipeline for LaTeX-in-diagram content.
+- **The rest of vector export (§11, Phase 10): PDF, PNG@DPI, EPS/PS, and
+  print dialogs.** TikZ export is done (see above) and Phase 1's SVG
+  native/plain export already existed; a real, standard-TikZ,
+  `pdflatex`-verified path is the one export format beyond SVG that
+  exists so far.
 - **Polish (§11, Phase 11)**: autosave, templates, dark mode, i18n,
   accessibility, perf tuning at the ≥10,000-element scale, tablet UX.
 - Within what *is* built: snapping, orthogonal connector routing
@@ -149,7 +169,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_input         # empty — Phase 6 (pointer/pen pipeline)
 /packages/sd_ui            # 🚧 Phase 3+4 (partial) — palette/tree/inspector/problems/H(z); ribbon in 5
 /packages/sd_latex         # empty — Phase 9 (math rendering)
-/packages/sd_export        # empty — Phase 10 (SVG/PDF/PNG/EPS/TikZ export)
+/packages/sd_export        # ✅ Phase 10 (partial) — TikZ export, pdflatex-verified; PDF/PNG/EPS/print pending
 /packages/sd_commands      # empty — undo/redo (no phase owns it alone; needed by 2+)
 /plugins/sd_pen_*           # placeholder READMEs — Phase 6 native pen plugins
 /docs                       # architecture-mining notes (§1) + this project's own notes
@@ -209,6 +229,16 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   (`sd_render`'s `SigmaCanvas`), not through a separate "connector tool" —
   there's no tool-mode concept yet (that's the ribbon's job, Phase 5), so
   the canvas just recognizes "pointer-down near a port" directly.
+- **TikZ export targets standard TikZ, not the `tikz-dsp` package.**
+  `tikz-dsp` isn't in this sandbox's LaTeX distribution (nor most others
+  by default — it's a niche CTAN package), so depending on it would make
+  the "TikZ export compiles" acceptance test (§13) environment-fragile.
+  Standard `\node[...]`/`\draw[->]` with named nodes gets the same
+  visual result (TikZ clips the arrow to each node's shape boundary
+  automatically) without the dependency, and is verified by literally
+  shelling out to `pdflatex` on the generated source in a temp
+  directory — a string-content assertion alone can't actually prove a
+  `.tex` file compiles.
 
 ## Build & test
 

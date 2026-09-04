@@ -12,10 +12,18 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
+  sd_document:
+    path: ../sd_document
+  sd_graph:
+    path: ../sd_graph
+  sd_render:
+    path: ../sd_render
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  sd_stencils:
+    path: ../sd_stencils
 
 flutter:
