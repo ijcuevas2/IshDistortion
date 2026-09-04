@@ -110,14 +110,24 @@ class _RibbonState extends State<Ribbon> {
           const Divider(height: 1),
           SizedBox(
             height: 92,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final group in tab.groups) ...[
-                  _RibbonGroupView(group: group),
-                  const VerticalDivider(width: 1),
+            // Scrolls horizontally rather than overflowing once a tab's
+            // groups don't all fit — an ordinary ribbon (this ribbon's
+            // own Home tab, once it grew a File group on top of
+            // Undo/Clipboard/Tools/Zoom, included) can outgrow a narrow
+            // window; a real one wraps to a second row or collapses
+            // groups, but scrolling is the simplest correct behavior
+            // that never clips content unreachably.
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final group in tab.groups) ...[
+                    _RibbonGroupView(group: group),
+                    const VerticalDivider(width: 1),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],

@@ -378,6 +378,42 @@ Built and verified so far (each gate below is green — see "Build & test"):
   skipped since the always-visible palette sidebar already covers
   drag-to-place discovery and a flyout would only duplicate it — and
   docking/undocking panels (still a fixed three-pane layout).
+- **§2/§10 — document persistence: Save and Open, the app's first of
+  any kind.** Until now every diagram lived only in memory and vanished
+  when the app closed — Phase 1's `writeSdDocument`/`parseSdDocument`
+  had existed since the very first session but had no UI caller at all.
+  `sd_ui` gained `SaveDocumentDialog` (serializes via `writeSdDocument`,
+  a plain synchronous file write — no toolchain, no `Isolate.run`, so
+  none of `ExportPdfDialog`'s injectable-seam machinery is needed here)
+  and `OpenDocumentDialog` (reads + `parseSdDocument`s a file,
+  deliberately *not* replacing the app's document itself — see its own
+  doc comment — just handing the parsed result back to whoever asked).
+  The app shell's Home tab gained a **File** group (Open/Save, ahead of
+  Undo) — the *first* group in the ribbon's own tab, not appended at
+  the end, matching where a real ribbon (and this project's own
+  brief) puts file operations. `_openDocument` is the one place that
+  actually *adopts* an opened document: swaps `_document` (no longer
+  `late final`) and its `DocumentListenable` (disposing the old one),
+  and clears `UndoStack`/`SelectionModel` — stale undo history or a
+  stale selection referencing the *old* document's elements could never
+  apply to the new one, the exact scenario `UndoStack.clear`'s own doc
+  comment names. The canvas and the tabbed panels area are each keyed
+  on `ValueKey(_document)` so every panel caching its own
+  `DocumentListenable` in `initState` (several do) gets a clean remount
+  bound to the new document on Open, rather than silently continuing to
+  react to a document that's no longer current — found necessary by a
+  real app-level test that opened a second document and initially still
+  saw the first one's content. Building this also required a genuine
+  `Ribbon` layout fix: a 5th Home-tab group (File, on top of
+  Undo/Clipboard/Tools/Zoom) overflowed a normal window's width, so the
+  group row now scrolls horizontally instead of clipping unreachable
+  content — the same real-world behavior any ribbon needs once enough
+  groups accumulate on one tab, not something this project can
+  outgrow more gracefully by coincidence. 10 new `sd_ui` tests, 2 new
+  app tests. Not implemented: a real native file-save/open picker (a
+  plain text field stands in for one, same as `ExportPdfDialog`), "Save
+  As" vs. "Save" distinction, a document-dirty/unsaved-changes
+  indicator, and prompting before an Open discards unsaved work.
 
 **Next, if this continues**: the 5 native pen plugins (6/7), the rest
 of vector export — PNG/EPS/print (10) —, the rest of §5.11's analysis
@@ -460,7 +496,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_render        # ✅ Phase 2 (+connectors) — scene, pan/zoom, selection, port-to-port wiring
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
-/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), equation+PDF-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode
+/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
 /packages/sd_export        # ✅ Phase 10 (partial) — TikZ+PDF export (PDF has a ribbon UI entry point), pdflatex-verified; PNG/EPS/print pending
 /packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app
@@ -734,6 +770,50 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   shape of seam (default: the real `exportToPdf`); a future dialog
   wrapping any other `Isolate.run`-based pipeline should follow the
   same pattern from the start rather than rediscover this.
+- **The pitfall above turned out broader than "just `Isolate.run`":
+  building `SaveDocumentDialog`/`OpenDocumentDialog` next (pure
+  synchronous file I/O, no isolate anywhere) hit the *same symptom* —
+  a test hung indefinitely — on `await Directory.systemTemp.createTemp
+  (...)` specifically; switching that one call to `createTempSync`
+  fixed it immediately in an otherwise-identical test.** The real
+  pattern is: some async `dart:io` operations (not only isolate-
+  spawning ones) don't reliably complete inside `testWidgets`'s zone —
+  plain *synchronous* file I/O (confirmed fine) isn't affected. Found
+  by writing a series of narrowing diagnostic tests (bare file I/O in a
+  test body -> file I/O in a button's `onPressed` -> the real dialog
+  widget -> the real dialog with the *exact* failing test's setup)
+  until the one line that mattered was isolated, rather than guessing.
+  Every dialog test in this project now uses sync `dart:io` calls
+  throughout for exactly this reason. See the standalone
+  cross-project memory this and the bullet above were promoted to
+  (`isolate-run-testwidgets-hang.md`, kept in sync with both findings)
+  for the fuller writeup.
+- **`_openDocument` swaps `_document`/`_documentListenable` wholesale
+  and keys the canvas and tabbed-panels area on `ValueKey(_document)`,
+  rather than mutating the existing document's content in place to
+  match what was opened.** A `StatefulWidget`'s `initState` runs once;
+  several panels (`PoleZeroPanel`, `BodePanel`, `TransferFunctionPanel`,
+  ...) bind their own `DocumentListenable` there and never re-bind it
+  if `widget.document` merely changes identity on an otherwise-
+  unchanged `State` — they'd keep reacting to the *old* document
+  forever. Fixing every one of those panels individually (a
+  `didUpdateWidget` override apiece) would work too, but touches many
+  already-shipped files for the same fix repeated N times; a single
+  `ValueKey` at the two points that actually own document identity
+  forces Flutter to fully discard and recreate that whole subtree
+  instead — found necessary (not merely theorized) by a real app-level
+  test that opened a second document and initially still saw the
+  first one's content in the Elements tab.
+- **`Ribbon`'s group row is a horizontally scrolling
+  `SingleChildScrollView`, not a plain `Row`.** Adding the File group
+  (Open/Save) as a 5th group on Home — on top of Undo/Clipboard/Tools/
+  Zoom — overflowed a normal window's width, caught by a `RenderFlex
+  overflowed` assertion in a real app-level test. A production ribbon
+  would more likely wrap to a second row or collapse a group behind a
+  dropdown once its tab is this full, but scrolling is the simplest
+  change that never clips content unreachably, and is itself a normal,
+  expected ribbon behavior (Office's own ribbon does this) rather than
+  a workaround specific to this one test's window size.
 
 ## Build & test
 

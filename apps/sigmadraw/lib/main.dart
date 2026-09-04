@@ -16,11 +16,13 @@ import 'package:sd_ui/sd_ui.dart';
 /// [SelectionModel] and one [UndoStack] (§2/§12 — every mutation those
 /// pieces make routes through it, undoable via the ribbon's buttons or
 /// Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y). §5's [Ribbon] (Phase 5) is the real
-/// dockable-panel ribbon shell: a Home tab (Clipboard/Undo/Tools/Zoom),
-/// an Insert tab ([InsertLatexDialog] — the UI entry point Phase 9's
-/// `sd_latex` compile pipeline had been missing), and an Export tab
-/// ([ExportPdfDialog] — the same kind of gap for `sd_export`'s PDF
-/// pipeline).
+/// dockable-panel ribbon shell: a Home tab (File/Clipboard/Undo/Tools/
+/// Zoom — [SaveDocumentDialog]/[OpenDocumentDialog] give this app its
+/// first persistence of any kind; before this, every diagram vanished on
+/// close), an Insert tab ([InsertLatexDialog] — the UI entry point
+/// Phase 9's `sd_latex` compile pipeline had been missing), and an
+/// Export tab ([ExportPdfDialog] — the same kind of gap for
+/// `sd_export`'s PDF pipeline).
 void main() {
   runApp(const SigmaDrawApp());
 }
@@ -53,8 +55,11 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
   final _undoStack = UndoStack();
   final _clipboard = SdClipboard();
   final _canvasKey = GlobalKey<SigmaCanvasState>();
-  late final SdDocument _document;
-  late final DocumentListenable _documentListenable;
+  // Not `late final`: _openDocument replaces both with a fresh document
+  // (and its own listenable) entirely, rather than mutating in place —
+  // see _openDocument's own doc comment.
+  late SdDocument _document;
+  late DocumentListenable _documentListenable;
 
   /// §10's Home-tab tool selector, driven by the ribbon's Tools group
   /// below.
@@ -117,6 +122,48 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
 
   void _zoomToFit() => _canvasKey.currentState?.fitToContentAuto();
 
+  Future<void> _saveDocument() async {
+    final path = await showDialog<String>(
+      context: context,
+      builder: (_) => SaveDocumentDialog(document: _document),
+    );
+    if (path != null && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Saved to $path')));
+    }
+  }
+
+  /// Opens a document from disk, *replacing* the app's current one
+  /// wholesale rather than mutating it in place — an
+  /// [OpenDocumentDialog] only reads+parses a file (see its own doc
+  /// comment on why), so this is the one place that actually adopts the
+  /// result: swaps [_document] and [_documentListenable] (disposing the
+  /// old listenable, since nothing should keep reacting to a document
+  /// that's no longer current), and clears [_undoStack]/[_selection] —
+  /// stale undo history or a stale selection referencing the *old*
+  /// document's elements could never be meaningfully applied to the new
+  /// one. [UndoStack.clear]'s own doc comment names this exact scenario.
+  ///
+  /// The canvas and the tabbed panels area are each keyed on
+  /// `ValueKey(_document)` (see `build` below) so every one of them
+  /// (several of which cache a `DocumentListenable` of their own,
+  /// bound once in `initState`) gets a clean remount bound to the new
+  /// document, rather than silently continuing to listen to the old one.
+  Future<void> _openDocument() async {
+    final opened = await showDialog<SdDocument>(
+      context: context,
+      builder: (_) => const OpenDocumentDialog(),
+    );
+    if (opened == null || !mounted) return;
+    setState(() {
+      _documentListenable.dispose();
+      _document = opened;
+      _documentListenable = DocumentListenable(_document);
+      _undoStack.clear();
+      _selection.clear();
+    });
+  }
+
   Future<void> _insertEquation() => showDialog<void>(
     context: context,
     builder: (_) => InsertLatexDialog(
@@ -146,6 +193,23 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
   RibbonTab _homeTab() => RibbonTab(
     title: 'Home',
     groups: [
+      RibbonGroup(
+        title: 'File',
+        actions: [
+          RibbonAction(
+            icon: Icons.folder_open,
+            label: 'Open',
+            tooltip: 'Open a diagram from disk',
+            onPressed: _openDocument,
+          ),
+          RibbonAction(
+            icon: Icons.save,
+            label: 'Save',
+            tooltip: 'Save this diagram to disk',
+            onPressed: _saveDocument,
+          ),
+        ],
+      ),
       RibbonGroup(
         title: 'Undo',
         actions: [
@@ -305,6 +369,11 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                     ),
                     Expanded(
                       child: StencilCanvasArea(
+                        // Forces a clean remount (fresh viewport/drag
+                        // state) on _openDocument, rather than the canvas
+                        // silently carrying over state that belonged to
+                        // whatever document was open before.
+                        key: ValueKey(_document),
                         document: _document,
                         selection: _selection,
                         undoStack: _undoStack,
@@ -317,6 +386,13 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                       child: Material(
                         elevation: 1,
                         child: DefaultTabController(
+                          // Same reasoning as StencilCanvasArea's key
+                          // above: several of these panels cache their
+                          // own DocumentListenable in initState and never
+                          // rebind it if `document` merely changes on an
+                          // existing State — a fresh key forces a clean
+                          // remount bound to the new document instead.
+                          key: ValueKey(_document),
                           length: 6,
                           child: Column(
                             children: [
