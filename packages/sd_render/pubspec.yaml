@@ -16,6 +16,8 @@ dependencies:
     path: ../sd_commands
   sd_document:
     path: ../sd_document
+  sd_ink:
+    path: ../sd_ink
   vector_math: ^2.4.2
 
 dev_dependencies:

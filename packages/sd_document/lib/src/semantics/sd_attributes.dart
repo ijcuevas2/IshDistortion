@@ -36,6 +36,12 @@ abstract final class SdAttr {
   static final stroke = SdQName.sd('stroke');
   static final pressure = SdQName.sd('pressure');
 
+  /// The stroke's editable centerline (`sd:strokePoints`) — see
+  /// `SdStrokeSemantics.strokeCenterline`'s doc comment for why this
+  /// exists alongside [pressure] rather than trying to recover a
+  /// centerline from the filled-outline `<path>` geometry alone.
+  static final strokePoints = SdQName.sd('strokePoints');
+
   /// The original, editable LaTeX source behind an embedded math fragment
   /// (§11: "Store original LaTeX source in `sd:latex` (textext-style
   /// editable)") — carried on the `<g>` that wraps that fragment's real

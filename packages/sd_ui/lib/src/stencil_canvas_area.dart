@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sd_commands/sd_commands.dart';
 import 'package:sd_document/sd_document.dart';
+import 'package:sd_ink/sd_ink.dart';
 import 'package:sd_render/sd_render.dart';
 import 'package:sd_stencils/sd_stencils.dart';
 
@@ -16,6 +17,9 @@ class StencilCanvasArea extends StatefulWidget {
     this.selection,
     this.canvasKey,
     this.undoStack,
+    this.tool = CanvasTool.select,
+    this.inkStroke = const InkStroke(),
+    this.inkColor = const Color(0xff1a1a1a),
   });
 
   final SdDocument document;
@@ -26,6 +30,12 @@ class StencilCanvasArea extends StatefulWidget {
   /// connector edits become undoable) and used to wrap drop-to-place too.
   /// `null` (the default) preserves direct-mutation behavior throughout.
   final UndoStack? undoStack;
+
+  /// Passed straight through to the inner [SigmaCanvas] — see
+  /// [CanvasTool].
+  final CanvasTool tool;
+  final InkStroke inkStroke;
+  final Color inkColor;
 
   @override
   State<StencilCanvasArea> createState() => _StencilCanvasAreaState();
@@ -83,6 +93,9 @@ class _StencilCanvasAreaState extends State<StencilCanvasArea> {
         document: widget.document,
         selection: widget.selection,
         undoStack: widget.undoStack,
+        tool: widget.tool,
+        inkStroke: widget.inkStroke,
+        inkColor: widget.inkColor,
       ),
     );
   }

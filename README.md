@@ -150,18 +150,54 @@ Built and verified so far (each gate below is green — see "Build & test"):
   ElementTree/ProblemsPanel-triggered edits (none exist yet), a
   delete/backspace command (no delete UI exists yet either), and
   disk-backed persistence of the history across a document reload.
+- **Phase 6 (partial) — the ink pipeline, and an actual "draw with the
+  mouse" tool.** `packages/sd_ink` (pure Dart): a real §6 pipeline —
+  speed-based pressure inference (an atan sigmoid — slower reads as
+  more pressure) for pressureless devices, a moving-average stabilizer,
+  Ramer-Douglas-Peucker simplification, Catmull-Rom curve fitting
+  (spline-interpolating pressure *and* position together, not just
+  position), and — the core geometry — converting the resulting
+  variable-width centerline into a **filled outline** `<path>` (offset
+  polygon each side; a single tap becomes a filled circle) rather than
+  a variable-width stroke, so it renders in any plain SVG viewer with
+  no special support needed. Verified with hand-derived geometry (a
+  straight constant-pressure stroke's outline vertices match a
+  6.75-unit half-width rectangle to `1e-6`, computed independently by
+  hand from the pressure curve — not just "some path came out").
+  `sd_document` gained `sd:strokePoints`/`strokeCenterline`, alongside
+  the already-existing `sd:pressure`, so the *editable* control polygon
+  (not just its pressures) actually round-trips — the outline alone
+  can't be reconstructed back into a centerline once width varies
+  point-to-point. Wired into `sd_render`'s `SigmaCanvas` as a real,
+  minimal `CanvasTool` (`select`/`ink` — a two-value precursor to §10's
+  ribbon tool selector): the ink tool draws a lightweight raw-polyline
+  preview overlay while dragging (never running the full pipeline
+  per-point) and commits the real outline path — through the same
+  `UndoStack` as everything else — on pen-up. The app bar's segmented
+  button switches tools for real. 42 new tests (4 `sd_document`, 30
+  `sd_ink`, 6 `sd_render`, 2 the app) — including an end-to-end one that
+  taps the Ink button, drags with a simulated mouse, and undoes it via
+  the same Undo button a placed stencil would use.
+  Not implemented: the Kalman/Krita "pulled string" stabilizers,
+  Schneider curve fitting, velocity-based width modulation, tilt-shaped
+  nibs, erasers beyond whole-stroke delete (not even wired to a UI
+  gesture yet — only proven via `RemoveChildCommand` in `sd_commands`'s
+  own tests), and all of §7/`sd_input` (device classification beyond
+  "is this literally a stylus", palm rejection, the 5 native plugins —
+  this sandbox can only build the Linux desktop target anyway).
 
-**Next, if this continues**: Ribbon UI (5), ink/pen input + 5 native
-plugins (6), the rest of vector export — PDF/PNG/EPS/print (10) —, and
-polish (11) are all **not started**, and §5.5/§5.7/§5.8/§5.11 remain thin
-and Phase 9's equation-editor UI is missing (previous bullets). Given the
-true scope of §0-§15 (a production, cross-platform, multi-native-plugin
-app), these were not attempted in the interest of not shipping
-shallow/fake versions of them — see "What's not built" below.
+**Next, if this continues**: Ribbon UI (5), the 5 native pen plugins +
+`sd_input`'s device-classification/palm-rejection layer (6/7), the rest
+of vector export — PDF/PNG/EPS/print (10) —, and polish (11) are all
+**not started**, and §5.5/§5.7/§5.8/§5.11 remain thin and Phase 9's
+equation-editor UI is missing (previous bullets). Given the true scope
+of §0-§15 (a production, cross-platform, multi-native-plugin app),
+these were not attempted in the interest of not shipping shallow/fake
+versions of them — see "What's not built" below.
 
-`packages/sd_ink` and `sd_input` are still empty scaffolds (a `library;`
-stub, no `test/`), and `plugins/sd_pen_*` are placeholder READMEs — see
-each one for what it'll need to become in Phase 6.
+`packages/sd_input` is still an empty scaffold (a `library;` stub, no
+`test/`), and `plugins/sd_pen_*` are placeholder READMEs — see each one
+for what it'll need to become.
 
 ## What's not built (be honest about scope)
 
@@ -175,12 +211,17 @@ faked. Concretely still missing:
 
 - **Ribbon UI (§10, Phase 5).** The app is a plain `Row` of panels, not
   the tabbed/contextual ribbon with galleries and dialog launchers.
-- **Ink/pen (§6-§7, Phase 6) and all 5 native plugins.** No stroke
-  model, no pointer-classification/palm-rejection pipeline, and none of
-  `plugins/sd_pen_{windows,macos,linux,android,ios}` has been written —
+- **The rest of ink/pen (§6-§7, Phase 6) and all 5 native plugins.** The
+  stroke model, pressure/speed pipeline, and outline geometry exist and
+  are wired into a real (if minimal) draw tool (see above) — what's
+  missing is `sd_input`'s device-classification/palm-rejection layer
+  (today the canvas only checks "is `PointerEvent.kind` literally a
+  stylus", nothing about proximity/palm/eraser-tip) and every
+  `plugins/sd_pen_{windows,macos,linux,android,ios}` native plugin —
   this sandbox can only build/run the Linux desktop target anyway, so
-  the other 4 plugins couldn't have been compiled or tested here even
-  if written.
+  the other 4 couldn't have been compiled or tested here even if
+  written, and Linux's own pen support (§7: libinput/XInput2/
+  wayland tablet_v2) is a real native-code undertaking on its own.
 - **The rest of §5.5/§5.7/§5.8/§5.11 (Phase 7).** §5.5's FIR/biquad/
   cascade are generated (see above) but lattice/parallel/wave-digital/
   comb/CIC/state-space forms aren't; §5.7 (comms/modulation — mixer,
@@ -219,8 +260,8 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_graph         # ✅ Phase 4+8 — semantic graph, validation, Tarjan, Mason, rate/netlist
 /packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR/biquad/cascade generators
 /packages/sd_render        # ✅ Phase 2 (+connectors) — scene, pan/zoom, selection, port-to-port wiring
-/packages/sd_ink           # empty — Phase 6 (stroke model, pressure curves)
-/packages/sd_input         # empty — Phase 6 (pointer/pen pipeline)
+/packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
+/packages/sd_input         # empty — Phase 6/7 (device classification, palm rejection)
 /packages/sd_ui            # 🚧 Phase 3+4 (partial) — palette/tree/inspector/problems/H(z); ribbon in 5
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
 /packages/sd_export        # ✅ Phase 10 (partial) — TikZ export, pdflatex-verified; PDF/PNG/EPS/print pending
@@ -343,6 +384,33 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   means adopting undo/redo was purely additive — every prior test still
   passes unmodified — instead of a breaking change propagated through
   three packages at once.
+- **An ink stroke's persisted, editable form is its *simplified*
+  centerline (post-smoothing, post-RDP), not the raw pointer samples or
+  the further-subdivided Catmull-Rom points the outline geometry
+  actually uses.** The raw samples are noisy (that's the whole reason
+  to stabilize them) and the curve-fit samples are one specific
+  tessellation of infinitely many that would render identically — persisting
+  either would make a later "drag this centerline point" editor either
+  fight the noise or have far more points than a user could sensibly
+  grab. The simplified polygon is the smallest point set that still
+  captures the stroke's actual shape, which is exactly what such an
+  editor should expose.
+- **The live in-progress-stroke overlay draws a raw polyline through
+  the unprocessed samples, not a preview of the real filled outline.**
+  Running smoothing + RDP + Catmull-Rom + offset-polygon generation on
+  every single pointer-move — for a stroke that could accumulate
+  hundreds of samples before pen-up — is exactly the per-point heavy
+  work §6 says an ink overlay must never do. The full pipeline runs
+  exactly once, at pen-up, against the now-complete sample list.
+- **The ink tool is gated by a new two-value `CanvasTool` enum
+  (`select`/`ink`) on `SigmaCanvas`, rather than, say, a boolean flag or
+  overloading the existing pointer-down hit-testing.** §10's real tool
+  selector (a ribbon button group) doesn't exist yet, but *something*
+  has to tell `SigmaCanvas` "every gesture is a stroke now, regardless
+  of what's underneath the pointer" — a boolean would've worked
+  equally well for two tools, but naming it as an enum now means adding
+  a third tool later (once the ribbon exists) touches one `switch`, not
+  a second boolean flag interacting with the first.
 
 ## Build & test
 

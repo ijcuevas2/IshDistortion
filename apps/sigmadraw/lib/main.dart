@@ -9,8 +9,9 @@ import 'package:sd_ui/sd_ui.dart';
 /// SigmaDraw application entry point.
 ///
 /// This is still an early scaffold: [SigmaDrawHome] wires up real Phase
-/// 2-4 pieces — a [StencilCanvasArea] (drop-to-place, drag-to-connect
-/// canvas), a [StencilPalette], and a tabbed [ElementTree] /
+/// 2-4 pieces — a [StencilCanvasArea] (drop-to-place, drag-to-connect,
+/// and (§6/§7) draw-ink canvas — the app bar's segmented button switches
+/// [CanvasTool]), a [StencilPalette], and a tabbed [ElementTree] /
 /// [InspectorPanel] / [ProblemsPanel] / [TransferFunctionPanel], sharing
 /// one [SelectionModel] and one [UndoStack] (§2/§12 — every mutation those
 /// pieces make routes through it, undoable via the app bar's buttons or
@@ -48,6 +49,10 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
   final _undoStack = UndoStack();
   late final SdDocument _document;
   late final DocumentListenable _documentListenable;
+
+  /// §10's Home-tab tool selector, stood in for by the app bar's
+  /// segmented button below until the real ribbon (Phase 5) exists.
+  CanvasTool _tool = CanvasTool.select;
 
   @override
   void initState() {
@@ -97,6 +102,25 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
           appBar: AppBar(
             title: const Text('SigmaDraw'),
             actions: [
+              SegmentedButton<CanvasTool>(
+                segments: const [
+                  ButtonSegment(
+                    value: CanvasTool.select,
+                    icon: Icon(Icons.near_me),
+                    tooltip: 'Select',
+                  ),
+                  ButtonSegment(
+                    value: CanvasTool.ink,
+                    icon: Icon(Icons.draw),
+                    tooltip: 'Ink',
+                  ),
+                ],
+                selected: {_tool},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) =>
+                    setState(() => _tool = selection.single),
+              ),
+              const SizedBox(width: 8),
               ListenableBuilder(
                 listenable: _documentListenable,
                 builder: (context, _) => IconButton(
@@ -134,6 +158,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                   document: _document,
                   selection: _selection,
                   undoStack: _undoStack,
+                  tool: _tool,
                 ),
               ),
               SizedBox(

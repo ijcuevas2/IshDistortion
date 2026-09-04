@@ -18,6 +18,8 @@ dependencies:
     path: ../sd_document
   sd_graph:
     path: ../sd_graph
+  sd_ink:
+    path: ../sd_ink
   sd_latex:
     path: ../sd_latex
   sd_render:

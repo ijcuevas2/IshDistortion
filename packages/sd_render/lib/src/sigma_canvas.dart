@@ -5,9 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:sd_commands/sd_commands.dart';
 import 'package:sd_document/sd_document.dart';
+import 'package:sd_ink/sd_ink.dart';
 
 import 'geometry/svg_transform.dart';
 import 'grid_painter.dart';
+import 'ink_preview_painter.dart';
 import 'scene/hit_test.dart';
 import 'scene/port_handles.dart';
 import 'scene/scene.dart';
@@ -20,6 +22,15 @@ import 'viewport.dart';
 /// Document-unit tolerance (before dividing by zoom) for starting/ending a
 /// connector drag on a port dot.
 const double kPortHitTolerance = 8;
+
+/// Which gesture a pointer-down starts (§10: a real tool selector — a
+/// ribbon Home-tab button group — is Phase 5's job; this is the minimal
+/// two-value precursor that makes the ink tool possible before that
+/// exists). [select] is this widget's original behavior in full (click/
+/// marquee-select, move/scale drag handles, drag-to-connect); [ink] makes
+/// every pointer gesture draw an ink stroke instead (§6/§7), regardless
+/// of what's under the pointer.
+enum CanvasTool { select, ink }
 
 /// The composed, interactive infinite canvas (§8/§9): pan/zoom/grid, the
 /// retained scene, click/marquee selection, and move + uniform-corner-scale
@@ -45,10 +56,25 @@ class SigmaCanvas extends StatefulWidget {
     this.gridStyle = GridStyle.dots,
     this.selection,
     this.undoStack,
+    this.tool = CanvasTool.select,
+    this.inkStroke = const InkStroke(),
+    this.inkColor = const Color(0xff1a1a1a),
   });
 
   final SdDocument document;
   final GridStyle gridStyle;
+
+  /// Which gesture a pointer-down starts — see [CanvasTool].
+  final CanvasTool tool;
+
+  /// The pipeline (pressure curve, smoothing/simplification/fit settings)
+  /// [tool] `ink` commits a finished stroke through.
+  final InkStroke inkStroke;
+
+  /// Fill color for a newly-drawn ink stroke's outline (and its live
+  /// preview) — a single global color, not per-stroke color selection
+  /// (§10's ribbon color picker isn't built).
+  final Color inkColor;
 
   /// Share selection state with e.g. an inspector panel by providing one;
   /// otherwise the canvas creates and owns its own.
@@ -70,7 +96,7 @@ class SigmaCanvas extends StatefulWidget {
   State<SigmaCanvas> createState() => SigmaCanvasState();
 }
 
-enum _DragMode { none, pan, marquee, move, scale, connect }
+enum _DragMode { none, pan, marquee, move, scale, connect, ink }
 
 class SigmaCanvasState extends State<SigmaCanvas> {
   late final Scene scene;
@@ -88,6 +114,7 @@ class SigmaCanvasState extends State<SigmaCanvas> {
   final Map<SdElement, Matrix4> _dragStartLocalTransforms = {};
   PortHandle? _connectStart;
   Offset? _connectCurrentScreen;
+  final List<StrokePoint> _inkPoints = [];
 
   @override
   void initState() {
@@ -162,6 +189,16 @@ class SigmaCanvasState extends State<SigmaCanvas> {
               ),
               size: Size.infinite,
             ),
+            if (_dragMode == _DragMode.ink)
+              CustomPaint(
+                painter: InkPreviewPainter(
+                  points: _inkPoints,
+                  viewport: viewport,
+                  color: widget.inkColor,
+                  nominalWidth: widget.inkStroke.nominalWidth,
+                ),
+                size: Size.infinite,
+              ),
           ],
         ),
       ),
@@ -193,6 +230,13 @@ class SigmaCanvasState extends State<SigmaCanvas> {
     }
     if (event.buttons & kPrimaryButton == 0) {
       _dragMode = _DragMode.none;
+      return;
+    }
+
+    if (widget.tool == CanvasTool.ink) {
+      _dragMode = _DragMode.ink;
+      _inkPoints.clear();
+      setState(() => _inkPoints.add(_sampleFrom(event)));
       return;
     }
 
@@ -300,7 +344,32 @@ class SigmaCanvasState extends State<SigmaCanvas> {
         _applyScaleDrag(event.localPosition);
       case _DragMode.connect:
         setState(() => _connectCurrentScreen = event.localPosition);
+      case _DragMode.ink:
+        setState(() => _inkPoints.add(_sampleFrom(event)));
     }
+  }
+
+  /// Converts a raw pointer event into a document-space [StrokePoint]
+  /// (§6/§7). Pressure is only ever read from an actual stylus — a mouse
+  /// or touch pointer reports a constant, meaningless `1.0` for
+  /// [PointerEvent.pressure] rather than genuinely having none, so
+  /// passing that straight through would defeat [InkStroke]'s own
+  /// speed-based pressure *inference* for exactly the pressureless
+  /// devices that fallback exists for; `null` here is what tells it "this
+  /// sample has no real pressure, infer one" (§7's device classification
+  /// — full palm-rejection/proximity handling is `sd_input`'s job, not
+  /// built into this canvas).
+  StrokePoint _sampleFrom(PointerEvent event) {
+    final hasRealPressure =
+        event.kind == PointerDeviceKind.stylus ||
+        event.kind == PointerDeviceKind.invertedStylus;
+    final docPoint = viewport.screenToDocument(event.localPosition);
+    return StrokePoint(
+      x: docPoint.dx,
+      y: docPoint.dy,
+      pressure: hasRealPressure ? event.pressure : null,
+      timestamp: event.timeStamp,
+    );
   }
 
   void _onPointerUp(PointerEvent event) {
@@ -318,11 +387,14 @@ class SigmaCanvasState extends State<SigmaCanvas> {
       widget.undoStack?.commitTransaction(description: 'Move');
     } else if (_dragMode == _DragMode.scale) {
       widget.undoStack?.commitTransaction(description: 'Resize');
+    } else if (_dragMode == _DragMode.ink) {
+      _finishInkStroke();
     }
     setState(() {
       _marqueeScreen = null;
       _connectStart = null;
       _connectCurrentScreen = null;
+      _inkPoints.clear();
     });
     _dragMode = _DragMode.none;
     _activeHandle = null;
@@ -402,6 +474,43 @@ class SigmaCanvasState extends State<SigmaCanvas> {
     return 'e$n';
   }
 
+  /// Runs the accumulated `_inkPoints` through [widget.inkStroke]'s full
+  /// pipeline and commits the resulting filled-outline `<path>` (§6) — the
+  /// one point at which that whole pipeline runs, not per pointer-move
+  /// (see `InkPreviewPainter`'s doc comment for why).
+  void _finishInkStroke() {
+    final element = widget.inkStroke.build(
+      _inkPoints,
+      strokeId: _freshStrokeId(),
+      color: _colorToCss(widget.inkColor),
+    );
+    if (element == null) return;
+    final undoStack = widget.undoStack;
+    if (undoStack == null) {
+      widget.document.root.appendChild(element);
+    } else {
+      undoStack.execute(
+        InsertChildCommand(
+          widget.document.root,
+          element,
+          description: 'Draw stroke',
+        ),
+      );
+    }
+  }
+
+  String _freshStrokeId() {
+    final existing = widget.document.root.descendantElements
+        .map((e) => e.strokeId)
+        .whereType<String>()
+        .toSet();
+    var n = 1;
+    while (existing.contains('ink$n')) {
+      n++;
+    }
+    return 'ink$n';
+  }
+
   Rect? _unionSelectionBounds() {
     Rect? union;
     for (final element in selection.selected) {
@@ -477,4 +586,16 @@ class SigmaCanvasState extends State<SigmaCanvas> {
       }
     }
   }
+}
+
+/// Formats [color] as a CSS hex color (`#rrggbb`, or `#rrggbbaa` if it has
+/// any transparency) for an SVG `fill`/`stroke` attribute — the inverse of
+/// `parseSvgColor` (`svg_paint.dart`), which nothing needed until an ink
+/// stroke's color became caller-configurable rather than always a
+/// hard-coded literal string.
+String _colorToCss(Color color) {
+  String channel(double v) =>
+      (v * 255).round().toRadixString(16).padLeft(2, '0');
+  final hex = '#${channel(color.r)}${channel(color.g)}${channel(color.b)}';
+  return color.a >= 1.0 ? hex : '$hex${channel(color.a)}';
 }
