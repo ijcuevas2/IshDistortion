@@ -129,6 +129,25 @@ String _fmt(double v) {
       : rounded.toString();
 }
 
+/// The pure half of [applyWorldDelta]: computes the `transform` string
+/// applying [worldDelta] (in world space) to [element] would produce,
+/// *without* mutating anything. Split out so a caller that wants the
+/// mutation itself to go through an undoable [SdCommand] (see
+/// `sigma_canvas.dart`'s `SetAttributeCommand` wiring) can learn the
+/// "new value" a command needs at construction time before actually
+/// applying it — constructing the command only *after* mutating would
+/// have it capture the wrong "old value". Returns `null` under the same
+/// condition [applyWorldDelta] silently no-ops under: an ancestor's
+/// transform is degenerate (zero scale) and so uninvertible.
+String? computeWorldDeltaTransform(SdElement element, Matrix4 worldDelta) {
+  final parentWorld = parentWorldTransformOf(element);
+  final parentInverse = Matrix4.tryInvert(parentWorld);
+  if (parentInverse == null) return null;
+  final oldLocal = currentLocalTransform(element);
+  final newLocal = parentInverse * worldDelta * parentWorld * oldLocal;
+  return matrixToSvgTransform(newLocal);
+}
+
 /// Applies a *world-space* delta transform to [element] — rewrites its
 /// `transform` attribute so that, composed with its (unchanged) parent
 /// chain, its world transform becomes `worldDelta * <old world transform>`.
@@ -137,13 +156,7 @@ String _fmt(double v) {
 /// this, regardless of how deeply [element] is nested. A no-op if an
 /// ancestor's transform is degenerate (zero scale) and so uninvertible.
 void applyWorldDelta(SdElement element, Matrix4 worldDelta) {
-  final parentWorld = parentWorldTransformOf(element);
-  final parentInverse = Matrix4.tryInvert(parentWorld);
-  if (parentInverse == null) return;
-  final oldLocal = currentLocalTransform(element);
-  final newLocal = parentInverse * worldDelta * parentWorld * oldLocal;
-  element.setAttribute(
-    const SdQName('transform'),
-    matrixToSvgTransform(newLocal),
-  );
+  final newTransform = computeWorldDeltaTransform(element, worldDelta);
+  if (newTransform == null) return;
+  element.setAttribute(const SdQName('transform'), newTransform);
 }

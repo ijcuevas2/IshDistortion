@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:sd_commands/sd_commands.dart';
 import 'package:sd_document/sd_document.dart';
 
 import 'geometry/svg_transform.dart';
@@ -43,6 +44,7 @@ class SigmaCanvas extends StatefulWidget {
     required this.document,
     this.gridStyle = GridStyle.dots,
     this.selection,
+    this.undoStack,
   });
 
   final SdDocument document;
@@ -51,6 +53,18 @@ class SigmaCanvas extends StatefulWidget {
   /// Share selection state with e.g. an inspector panel by providing one;
   /// otherwise the canvas creates and owns its own.
   final SelectionModel? selection;
+
+  /// Routes every document mutation this canvas makes (move/scale drags,
+  /// connector creation) through this stack instead of mutating directly,
+  /// so they become undoable — share one with e.g. an inspector panel the
+  /// same way as [selection]. `null` (the default) preserves this widget's
+  /// original direct-mutation behavior with no undo tracking at all.
+  ///
+  /// A move or scale drag opens one transaction at pointer-down and
+  /// commits it at pointer-up, so however many intermediate per-frame
+  /// edits a drag makes collapse into the single undo step a user actually
+  /// expects "Undo" to reverse (see [UndoStack]'s own doc comment).
+  final UndoStack? undoStack;
 
   @override
   State<SigmaCanvas> createState() => SigmaCanvasState();
@@ -204,6 +218,7 @@ class SigmaCanvasState extends State<SigmaCanvas> {
         );
         if (handle != null) {
           _dragMode = _DragMode.scale;
+          widget.undoStack?.beginTransaction();
           _activeHandle = handle;
           _scaleAnchorDocBounds = unionDoc;
           _dragStartLocalTransforms
@@ -227,6 +242,7 @@ class SigmaCanvasState extends State<SigmaCanvas> {
     if (hit != null) {
       if (!selection.isSelected(hit)) selection.selectOnly(hit);
       _dragMode = _DragMode.move;
+      widget.undoStack?.beginTransaction();
       return;
     }
 
@@ -263,8 +279,22 @@ class SigmaCanvasState extends State<SigmaCanvas> {
           docDelta.dy,
           0,
         );
+        final undoStack = widget.undoStack;
         for (final element in selection.selected) {
-          applyWorldDelta(element, worldDelta);
+          if (undoStack == null) {
+            applyWorldDelta(element, worldDelta);
+            continue;
+          }
+          final newValue = computeWorldDeltaTransform(element, worldDelta);
+          if (newValue == null) continue;
+          undoStack.execute(
+            SetAttributeCommand(
+              element,
+              const SdQName('transform'),
+              newValue,
+              description: 'Move',
+            ),
+          );
         }
       case _DragMode.scale:
         _applyScaleDrag(event.localPosition);
@@ -283,6 +313,11 @@ class SigmaCanvasState extends State<SigmaCanvas> {
     }
     if (_dragMode == _DragMode.connect && _connectStart != null) {
       _finishConnector(event.localPosition);
+    }
+    if (_dragMode == _DragMode.move) {
+      widget.undoStack?.commitTransaction(description: 'Move');
+    } else if (_dragMode == _DragMode.scale) {
+      widget.undoStack?.commitTransaction(description: 'Resize');
     }
     setState(() {
       _marqueeScreen = null;
@@ -341,7 +376,18 @@ class SigmaCanvasState extends State<SigmaCanvas> {
           ..edgeId = _freshEdgeId()
           ..edgeFrom = '$fromId:${output.portId}'
           ..edgeTo = '$toId:${input.portId}';
-    widget.document.root.appendChild(edgeElement);
+    final undoStack = widget.undoStack;
+    if (undoStack == null) {
+      widget.document.root.appendChild(edgeElement);
+    } else {
+      undoStack.execute(
+        InsertChildCommand(
+          widget.document.root,
+          edgeElement,
+          description: 'Create connector',
+        ),
+      );
+    }
   }
 
   String _freshEdgeId() {
@@ -408,6 +454,7 @@ class SigmaCanvasState extends State<SigmaCanvas> {
       ..scaleByDouble(scaleX, scaleY, 1.0, 1.0)
       ..translateByDouble(-anchor.dx, -anchor.dy, 0.0, 1.0);
 
+    final undoStack = widget.undoStack;
     for (final element in selection.selected) {
       final originalLocal = _dragStartLocalTransforms[element];
       if (originalLocal == null) continue;
@@ -415,10 +462,19 @@ class SigmaCanvasState extends State<SigmaCanvas> {
       final parentInverse = Matrix4.tryInvert(parentWorld);
       if (parentInverse == null) continue;
       final newLocal = parentInverse * worldDelta * parentWorld * originalLocal;
-      element.setAttribute(
-        const SdQName('transform'),
-        matrixToSvgTransform(newLocal),
-      );
+      final newValue = matrixToSvgTransform(newLocal);
+      if (undoStack == null) {
+        element.setAttribute(const SdQName('transform'), newValue);
+      } else {
+        undoStack.execute(
+          SetAttributeCommand(
+            element,
+            const SdQName('transform'),
+            newValue,
+            description: 'Resize',
+          ),
+        );
+      }
     }
   }
 }

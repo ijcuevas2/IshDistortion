@@ -12,6 +12,8 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  sd_commands:
+    path: ../../packages/sd_commands
   sd_document:
     path: ../../packages/sd_document
   sd_render:

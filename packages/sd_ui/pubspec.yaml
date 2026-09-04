@@ -12,6 +12,8 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
+  sd_commands:
+    path: ../sd_commands
   sd_document:
     path: ../sd_document
   sd_graph:

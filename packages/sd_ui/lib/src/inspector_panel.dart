@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sd_commands/sd_commands.dart';
 import 'package:sd_document/sd_document.dart';
 import 'package:sd_render/sd_render.dart';
 import 'package:sd_stencils/sd_stencils.dart';
@@ -10,10 +11,21 @@ import 'package:sd_stencils/sd_stencils.dart';
 /// Style/transform fields (also called for in §10) land alongside the
 /// transform-handle UI in a later pass.
 class InspectorPanel extends StatefulWidget {
-  const InspectorPanel({super.key, required this.selection, this.registry});
+  const InspectorPanel({
+    super.key,
+    required this.selection,
+    this.registry,
+    this.undoStack,
+  });
 
   final SelectionModel selection;
   final StencilRegistry? registry;
+
+  /// Routes label/parameter edits through this stack instead of mutating
+  /// directly, so they become undoable — share the same instance passed to
+  /// e.g. `SigmaCanvas`/`StencilCanvasArea`. `null` (the default) preserves
+  /// this widget's original direct-mutation behavior.
+  final UndoStack? undoStack;
 
   @override
   State<InspectorPanel> createState() => _InspectorPanelState();
@@ -33,6 +45,42 @@ class _InspectorPanelState extends State<InspectorPanel> {
   }
 
   void _onSelectionChanged() => setState(() {});
+
+  void _setBlockLabel(SdElement element, String? value) {
+    final undoStack = widget.undoStack;
+    if (undoStack == null) {
+      setState(() => element.blockLabel = value);
+      return;
+    }
+    final oldValue = element.blockLabel;
+    setState(
+      () => undoStack.execute(
+        CallbackCommand(
+          apply: () => element.blockLabel = value,
+          unapply: () => element.blockLabel = oldValue,
+          description: 'Change label',
+        ),
+      ),
+    );
+  }
+
+  void _setBlockParams(SdElement element, Map<String, Object?> value) {
+    final undoStack = widget.undoStack;
+    if (undoStack == null) {
+      setState(() => element.blockParams = value);
+      return;
+    }
+    final oldValue = element.blockParams;
+    setState(
+      () => undoStack.execute(
+        CallbackCommand(
+          apply: () => element.blockParams = value,
+          unapply: () => element.blockParams = oldValue,
+          description: 'Change parameter',
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,8 +119,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
           key: ValueKey('${element.blockId}-label'),
           label: 'Label',
           initialValue: element.blockLabel ?? '',
-          onChanged: (v) =>
-              setState(() => element.blockLabel = v.isEmpty ? null : v),
+          onChanged: (v) => _setBlockLabel(element, v.isEmpty ? null : v),
         ),
         const SizedBox(height: 16),
         Text('Parameters', style: Theme.of(context).textTheme.labelMedium),
@@ -85,7 +132,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
             onChanged: (v) {
               final params = Map<String, Object?>.of(element.blockParams);
               params[entry.key] = v;
-              setState(() => element.blockParams = params);
+              _setBlockParams(element, params);
             },
           ),
         const SizedBox(height: 16),

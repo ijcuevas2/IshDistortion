@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sd_commands/sd_commands.dart';
 import 'package:sd_document/sd_document.dart';
 import 'package:sd_render/sd_render.dart';
 import 'package:sd_stencils/sd_stencils.dart';
@@ -14,11 +15,17 @@ class StencilCanvasArea extends StatefulWidget {
     required this.document,
     this.selection,
     this.canvasKey,
+    this.undoStack,
   });
 
   final SdDocument document;
   final SelectionModel? selection;
   final GlobalKey<SigmaCanvasState>? canvasKey;
+
+  /// Passed straight through to the inner [SigmaCanvas] (so move/scale/
+  /// connector edits become undoable) and used to wrap drop-to-place too.
+  /// `null` (the default) preserves direct-mutation behavior throughout.
+  final UndoStack? undoStack;
 
   @override
   State<StencilCanvasArea> createState() => _StencilCanvasAreaState();
@@ -52,7 +59,18 @@ class _StencilCanvasAreaState extends State<StencilCanvasArea> {
       x: docPoint.dx - stencil.width / 2,
       y: docPoint.dy - stencil.height / 2,
     );
-    widget.document.root.appendChild(instance);
+    final undoStack = widget.undoStack;
+    if (undoStack == null) {
+      widget.document.root.appendChild(instance);
+    } else {
+      undoStack.execute(
+        InsertChildCommand(
+          widget.document.root,
+          instance,
+          description: 'Place ${stencil.displayName}',
+        ),
+      );
+    }
     canvasState.selection.selectOnly(instance);
   }
 
@@ -64,6 +82,7 @@ class _StencilCanvasAreaState extends State<StencilCanvasArea> {
         key: _canvasKey,
         document: widget.document,
         selection: widget.selection,
+        undoStack: widget.undoStack,
       ),
     );
   }

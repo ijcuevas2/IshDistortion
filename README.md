@@ -126,6 +126,30 @@ Built and verified so far (each gate below is green — see "Build & test"):
   ribbon item — there's no ribbon yet either), the built-in DSP label
   helpers beyond what a stencil already renders itself (x[n]/y[n]-on-
   edge, ...), and the optional experimental WASM-TeX fallback.
+- **`sd_commands` — undo/redo (§2/§12), wired into every editing
+  surface.** Not owned by one phase (§2 lists it as its own package,
+  "needed by 2+"), and until now completely unbuilt despite the app
+  already having several real ways to mutate a document. The classic
+  Command pattern (`SdCommand.apply`/`unapply`, not Inkscape's own
+  whole-tree-diffing approach — a deliberate, documented simplification)
+  plus an `UndoStack` with explicit transactions: `beginTransaction`/
+  `commitTransaction` collapse everything executed in between into one
+  undo step (Inkscape calls the same idea "event grouping"/"maybe
+  done"), which is what turns a drag's dozens of per-frame attribute
+  writes into the single "Undo" a user expects. Wired into every
+  existing mutation site: `sd_render`'s `SigmaCanvas` (move drags, scale
+  drags, and connector creation — each takes an optional `UndoStack?`,
+  `null` preserving the old direct-mutation behavior exactly), and
+  `sd_ui`'s `InspectorPanel` (label/param edits) and `StencilCanvasArea`
+  (palette drop-to-place). The app shell shares one `UndoStack` across
+  all of these and exposes it via app-bar Undo/Redo buttons *and*
+  Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y keyboard shortcuts — both verified with real
+  widget tests (drag a block, undo via the button; place a stencil, undo
+  via the keyboard). 38 new tests (27 in the new `sd_commands`, 4 in
+  `sd_render`, 3 in `sd_ui`, 3 in the app). Not implemented: wiring
+  ElementTree/ProblemsPanel-triggered edits (none exist yet), a
+  delete/backspace command (no delete UI exists yet either), and
+  disk-backed persistence of the history across a document reload.
 
 **Next, if this continues**: Ribbon UI (5), ink/pen input + 5 native
 plugins (6), the rest of vector export — PDF/PNG/EPS/print (10) —, and
@@ -135,10 +159,9 @@ true scope of §0-§15 (a production, cross-platform, multi-native-plugin
 app), these were not attempted in the interest of not shipping
 shallow/fake versions of them — see "What's not built" below.
 
-`packages/sd_ink`, `sd_input`, and `sd_commands` are still empty
-scaffolds (a `library;` stub, no `test/`), and `plugins/sd_pen_*` are
-placeholder READMEs — see each one for what it'll need to become in
-Phase 6.
+`packages/sd_ink` and `sd_input` are still empty scaffolds (a `library;`
+stub, no `test/`), and `plugins/sd_pen_*` are placeholder READMEs — see
+each one for what it'll need to become in Phase 6.
 
 ## What's not built (be honest about scope)
 
@@ -201,7 +224,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_ui            # 🚧 Phase 3+4 (partial) — palette/tree/inspector/problems/H(z); ribbon in 5
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
 /packages/sd_export        # ✅ Phase 10 (partial) — TikZ export, pdflatex-verified; PDF/PNG/EPS/print pending
-/packages/sd_commands      # empty — undo/redo (no phase owns it alone; needed by 2+)
+/packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app
 /plugins/sd_pen_*           # placeholder READMEs — Phase 6 native pen plugins
 /docs                       # architecture-mining notes (§1) + this project's own notes
 ```
@@ -298,6 +321,28 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   likely are — Dart's isolate messaging preserves object graphs,
   including cycles — but there's no need to depend on that when the
   actual expensive step, external process I/O, doesn't require it).
+- **`sd_commands` groups a drag into one undo step via explicit
+  transactions, not time-window/same-attribute coalescing.** An earlier
+  design had each new command ask the undo stack's top entry "can you
+  merge with this?" (matching attribute + a short time window) — simpler
+  to call, but fundamentally guesses at user intent: two edits to the
+  same attribute a beat apart could be either one continuous drag or two
+  genuinely separate actions, and a heuristic can't tell them apart
+  reliably. `beginTransaction`/`commitTransaction` instead ties grouping
+  to the actual gesture lifecycle a caller already knows about
+  (pointer-down/pointer-up), which is exactly what Inkscape's own
+  `document-undo.cpp` reference does ("event grouping"/"maybe done") —
+  and it generalizes for free to grouping edits to *different* elements
+  (e.g. a future "delete a block and its edges") that no attribute-based
+  heuristic could ever merge.
+- **Every call site that can mutate a document takes an optional
+  `UndoStack?`, defaulting to `null` (direct mutation, no undo
+  tracking), rather than requiring one.** `SigmaCanvas`, `InspectorPanel`,
+  and `StencilCanvasArea` all predate `sd_commands` and had passing tests
+  exercising their direct-mutation behavior; making the stack optional
+  means adopting undo/redo was purely additive — every prior test still
+  passes unmodified — instead of a breaking change propagated through
+  three packages at once.
 
 ## Build & test
 
