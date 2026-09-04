@@ -6,8 +6,12 @@
 /// the first time, the stencil palette (search + drag), a drop-to-
 /// place-and-connect-and-draw canvas wrapper, the element tree, the
 /// property inspector, a live Problems panel, and live H(z)/pole-zero/
-/// Bode/Nyquist/spectrogram readouts (§4/§5.11's semantic-graph analysis,
-/// surfaced in the UI). Docking and the status bar remain unbuilt.
+/// Bode/Nyquist/spectrogram/group-delay/impulse-step/root-locus
+/// readouts (§4/§5.11's semantic-graph analysis, surfaced in the UI —
+/// 9 of §5.11's 11 named plots now have a live panel; a constellation
+/// plot and an eye diagram remain, needing a symbol-level modulation/
+/// timing harness this project doesn't have). Docking and the status
+/// bar remain unbuilt.
 library;
 
 export 'src/bode_panel.dart';
@@ -16,6 +20,8 @@ export 'src/element_tree.dart';
 export 'src/export_eps_dialog.dart';
 export 'src/export_pdf_dialog.dart';
 export 'src/export_png_dialog.dart';
+export 'src/group_delay_panel.dart';
+export 'src/impulse_step_panel.dart';
 export 'src/insert_latex_dialog.dart';
 export 'src/inspector_panel.dart';
 export 'src/nyquist_panel.dart';
@@ -23,6 +29,7 @@ export 'src/open_document_dialog.dart';
 export 'src/pole_zero_panel.dart';
 export 'src/problems_panel.dart';
 export 'src/ribbon.dart';
+export 'src/root_locus_panel.dart';
 export 'src/save_document_dialog.dart';
 export 'src/spectrogram_panel.dart';
 export 'src/stencil_canvas_area.dart';

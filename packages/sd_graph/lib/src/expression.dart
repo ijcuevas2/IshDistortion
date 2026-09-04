@@ -23,6 +23,11 @@ sealed class Expr {
   /// loudly, not silently evaluate as zero.
   num evaluate(Map<String, num> bindings, {required num z});
 
+  /// Every distinct [SymbolExpr.name] appearing anywhere in this
+  /// expression — e.g. for `sd_ui`'s `RootLocusPanel` to find which
+  /// single coefficient is still unbound and so should be the one swept.
+  Set<String> get freeSymbols;
+
   /// Builds an [Expr] from an `sd:params` value: a [num] becomes a
   /// [ConstExpr]; a numeric [String] also becomes a [ConstExpr]; anything
   /// else becomes a [SymbolExpr] named after its string form (so an
@@ -57,6 +62,9 @@ final class ConstExpr extends Expr {
   num evaluate(Map<String, num> bindings, {required num z}) => value;
 
   @override
+  Set<String> get freeSymbols => const {};
+
+  @override
   bool operator ==(Object other) => other is ConstExpr && other.value == value;
   @override
   int get hashCode => value.hashCode;
@@ -76,6 +84,9 @@ final class SymbolExpr extends Expr {
     if (value == null) throw StateError('No binding for symbol "$name".');
     return value;
   }
+
+  @override
+  Set<String> get freeSymbols => {name};
 
   @override
   bool operator ==(Object other) => other is SymbolExpr && other.name == name;
@@ -98,6 +109,9 @@ final class ZPowExpr extends Expr {
       math.pow(z, power);
 
   @override
+  Set<String> get freeSymbols => const {};
+
+  @override
   bool operator ==(Object other) => other is ZPowExpr && other.power == power;
   @override
   int get hashCode => power.hashCode;
@@ -114,6 +128,10 @@ final class AddExpr extends Expr {
   @override
   num evaluate(Map<String, num> bindings, {required num z}) =>
       terms.fold<num>(0, (sum, t) => sum + t.evaluate(bindings, z: z));
+
+  @override
+  Set<String> get freeSymbols =>
+      terms.fold<Set<String>>({}, (acc, t) => acc..addAll(t.freeSymbols));
 
   @override
   String toString() {
@@ -145,6 +163,10 @@ final class MulExpr extends Expr {
       .fold<num>(1, (product, f) => product * f.evaluate(bindings, z: z));
 
   @override
+  Set<String> get freeSymbols =>
+      factors.fold<Set<String>>({}, (acc, f) => acc..addAll(f.freeSymbols));
+
+  @override
   String toString() =>
       factors.map((f) => f is AddExpr ? '($f)' : '$f').join('*');
 
@@ -164,6 +186,12 @@ final class DivExpr extends Expr {
   @override
   num evaluate(Map<String, num> bindings, {required num z}) =>
       numerator.evaluate(bindings, z: z) / denominator.evaluate(bindings, z: z);
+
+  @override
+  Set<String> get freeSymbols => {
+    ...numerator.freeSymbols,
+    ...denominator.freeSymbols,
+  };
 
   @override
   String toString() {

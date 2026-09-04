@@ -711,6 +711,52 @@ Built and verified so far (each gate below is green — see "Build & test"):
   Only the `sd_graph` computation layer landed this checkpoint — no
   painter/panel/app-tab yet for any of the three (see "What's not
   built"). 20 new `sd_graph` tests (114 → 134).
+- **§5.11 — group delay, impulse/step response, and root locus get
+  their UI layer, bringing 9 of the section's 11 named plots to a full
+  painter/panel/app tab.** `sd_render` gains `GroupDelayPainter`
+  (single-curve pane, reusing `bodeAxisRange`), `ImpulseStepPainter`
+  (two stacked stem/lollipop panes — one vertical line per sample, the
+  conventional way a discrete-time response is drawn, not a connected
+  curve), and `RootLocusPainter` (the unit circle/axes convention
+  `PoleZeroPlotPainter` already established, reusing its own
+  `complexToCanvas` directly, plus every pole/zero across every swept
+  sample as a scatter — a *deliberate* scope cut from a textbook root-
+  locus plot's connected per-root trajectories, which would need a
+  pole-tracking/matching step between samples since Durand-Kerner's
+  root order isn't trajectory-stable; a disclosed gap, not a silent
+  one). `sd_ui` gains matching `GroupDelayPanel`/`ImpulseStepPanel`
+  (the usual three message states) and `RootLocusPanel` — which is
+  genuinely different: root locus's whole point is sweeping a still-
+  *unresolved* coefficient, so this panel finds it automatically via a
+  new `Expr.freeSymbols` getter rather than treating an unbound symbol
+  as an error the way every other panel does — zero free symbols means
+  nothing to sweep, more than one means an ambiguous "which one?" (both
+  their own message states), exactly one gets swept from `0` to `2` (a
+  fixed default, not yet an adjustable UI control — a disclosed
+  simplification). Wired as the app's 9th-11th tabs; the tabbed-panels
+  `TabBar` is now `isScrollable` (11 tabs no longer fit the fixed-width
+  sidebar at once — the same overflow shape the Ribbon's own
+  horizontal-scroll fix already addressed elsewhere), and every
+  existing tab-tap test needed `tester.ensureVisible` added first (a
+  tap at an off-screen coordinate warns even where it doesn't outright
+  fail).
+  **Two real bugs found and fixed along the way, not worked around in
+  the test:** (1) `computePoleZero` threw an uncaught `ArgumentError`
+  instead of returning `null` for an `H(z)` that's identically zero at
+  one specific bound value (e.g. a `gain` block bound to exactly `0`)
+  — `findPolynomialRoots`'s own "leading coefficient must not be zero"
+  check is correct in isolation, but nothing upstream was catching the
+  genuinely-degenerate polynomial before it got there; fixed by
+  returning `null` for that case, the same "can't do this specific
+  analysis" outcome an unbound symbol already produces. (2)
+  `computeRootLocus` aborted its *entire* sweep (returning `null`) if
+  even one individually-swept value hit that same degeneracy — overly
+  fragile for what's usually just one exact point out of many; fixed
+  to skip only that one sample and keep the rest, returning `null`
+  overall only if every single swept value fails (the real "nothing
+  here worked" signal). 3 new `sd_graph` tests for the fix itself, 5
+  new `Expr.freeSymbols` tests, 11 new `sd_render` tests, 16 new
+  `sd_ui` tests, 3 new app tests.
 
 **Next, if this continues**: the 5 native pen plugins (6/7) and print
 export (10) are all **not started**; §5.5's wave-digital form remains
@@ -791,14 +837,14 @@ faked. Concretely still missing:
   spectrogram, constellation, eye diagram, Bode, Nyquist, and root
   locus. `computeBodePlot`'s two panes cover magnitude+phase, so
   pole-zero/Bode/Nyquist/spectrogram/group-delay/impulse-step/root-
-  locus (see above) cover 9 of the 11 at the `sd_graph` computation
-  layer — but only 6 of those 9 (pole-zero/Bode/Nyquist/spectrogram)
-  have a painter, panel, and app tab; group delay/impulse-step/root-
-  locus are computed and tested, not yet rendered anywhere, a real
-  remaining gap, not a subtle one. A constellation *plot* and an eye
-  diagram both need a symbol-level modulation/timing simulation
-  harness this project doesn't have at all, likely a genuinely
-  different shape of problem again, the same kind of finding wave-
+  locus (see above) cover 9 of the 11 — and, as of a later checkpoint,
+  all 9 have a real painter, panel, and app tab (group delay/impulse-
+  step/root-locus's own UI landed after this bullet was first written;
+  see above). Only a constellation *plot* and an eye diagram remain
+  entirely unbuilt — both need a symbol-level modulation/timing
+  simulation harness this project doesn't have at all, likely a
+  genuinely different shape of problem again, the same kind of finding
+  wave-
   digital's own investigation above surfaced. None of
   the filter generators have a palette/drag-to-canvas entry point yet
   either — they're called directly (as the tests do); wiring one into
@@ -833,9 +879,9 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 ```
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
-/packages/sd_graph         # ✅ Phase 4+8+5.11 (9/11 plots computed; 6/11 have UI) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram/group-delay/impulse-step/root-locus
+/packages/sd_graph         # ✅ Phase 4+8+5.11 (9/11 plots, all with UI) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram/group-delay/impulse-step/root-locus
 /packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1-4,6,7,8,9,10 leaf stencils + §5.5 nearly complete (FIR/IIR/lattice/comb/allpass/CIC/state-space; only wave-digital left) generators
-/packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, 6/11) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram painters
+/packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, 9/11) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram/group-delay/impulse-step/root-locus painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
 /packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF/EPS/PNG-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode/Nyquist/spectrogram
@@ -1322,6 +1368,20 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   form still used elsewhere in this same function for `markerEnd`)
   reads left-to-right in condition-then-key order, while the new
   syntax's "?" binds to whichever side is actually nullable.
+- **`computeRootLocus` skips an individually-degenerate swept value
+  rather than treating it as a whole-sweep failure.** Every other
+  "returns `null` on failure" function in this library has exactly one
+  underlying `H(z)`, so any failure there really does mean "this whole
+  analysis is impossible." A sweep is different: it evaluates `H(z)`
+  at many different bound values of the same expression, and it's
+  common (not a corner case) for *one* of those values to land exactly
+  on a genuine, narrow degeneracy — a swept gain passing through
+  exactly the one value that makes the numerator identically zero, for
+  instance — while every other value is perfectly fine. Aborting the
+  entire plot because of one such point would make root locus far less
+  useful than it should be for a completely ordinary sweep range; the
+  fix is the same "return `null` only when every value fails" rule a
+  human reading the resulting plot would already expect.
 
 ## Build & test
 

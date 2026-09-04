@@ -23,10 +23,16 @@ class PoleZeroResult {
 ///
 /// Returns `null` if [h]'s shape doesn't reduce to a clean rational
 /// polynomial once [bindings] is substituted (an unbound symbol remains,
-/// or the expression has some other non-polynomial structure) — this can
-/// happen for a graph Mason's formula still handles fine (an unresolved
-/// parameter is normal there), so this is a real "can't do this
-/// specific analysis on this specific H(z)" outcome, not a bug.
+/// or the expression has some other non-polynomial structure), or if a
+/// bound value happens to make the numerator or denominator identically
+/// zero (e.g. a pure `gain` block bound to exactly `0`, so `H(z) = 0`
+/// everywhere — found by exactly this case reaching `findPolynomialRoots`
+/// with a single, exactly-zero "leading" coefficient and throwing there
+/// instead). A finite pole/zero list isn't a meaningful answer for a
+/// transfer function that's zero (or undefined) at every point, so this
+/// is the same "can't do this specific analysis on this specific H(z)"
+/// outcome an unbound symbol already is, not a bug to work around by
+/// fabricating a root list.
 PoleZeroResult? computePoleZero(
   Expr h, {
   Map<String, num> bindings = const {},
@@ -40,6 +46,10 @@ PoleZeroResult? computePoleZero(
   final (denominatorCoeffs, denominatorZOrigin) = _clearedZPolynomial(
     rational.denominator,
   );
+  if (numeratorCoeffs.every((c) => c == 0) ||
+      denominatorCoeffs.every((c) => c == 0)) {
+    return null;
+  }
   // A numerator/denominator with no z^-0 (constant) term at all — every
   // path from source to sink passes through at least one delay, e.g. a
   // bare `H(z) = z^-1` (source -> delay -> sink: found by exactly this
@@ -91,11 +101,18 @@ class RootLocusSample {
 /// no new root-finding logic, since sweeping *is* the whole feature
 /// here, not a new way to find roots.
 ///
-/// Returns `null` if any swept value's own [computePoleZero] call does
-/// (e.g. a *different*, still-unbound symbol besides [parameter]
-/// remains, or [h]'s shape isn't a clean rational polynomial) — the
-/// same "can't do this specific analysis on this specific H(z)"
-/// non-bug outcome [computePoleZero] itself documents.
+/// Skips (rather than aborts the whole sweep for) any individual swept
+/// value whose own [computePoleZero] call returns `null` — e.g. a value
+/// that happens to make [h] identically zero at that one specific point
+/// (a removable, single-value degeneracy, not a reason to blank out
+/// every *other* perfectly good sample). Returns `null` for the
+/// *overall* call only if every single swept value fails this way —
+/// the actual signal that something is wrong for the whole sweep, not
+/// just one point of it (e.g. a *different*, still-unbound symbol
+/// besides [parameter] remains, or [h]'s shape isn't a clean rational
+/// polynomial at all) — the same "can't do this specific analysis on
+/// this specific H(z)" non-bug outcome [computePoleZero] itself
+/// documents.
 List<RootLocusSample>? computeRootLocus(
   Expr h, {
   required String parameter,
@@ -114,7 +131,7 @@ List<RootLocusSample>? computeRootLocus(
       h,
       bindings: {...bindings, parameter: value},
     );
-    if (result == null) return null;
+    if (result == null) continue;
     samples.add(
       RootLocusSample(
         parameterValue: value,
@@ -123,7 +140,7 @@ List<RootLocusSample>? computeRootLocus(
       ),
     );
   }
-  return samples;
+  return samples.isEmpty ? null : samples;
 }
 
 /// Splits [expr] into numerator/denominator polynomials in `z^-1` (a

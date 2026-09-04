@@ -13,6 +13,14 @@ void main() {
   testWidgets('the Pole-Zero tab is reachable without error', (tester) async {
     await tester.pumpWidget(const SigmaDrawApp());
 
+    // ensureVisible first: the tabbed-panels area's TabBar is scrollable
+    // (11 tabs no longer fit the fixed-width sidebar at once — the same
+    // overflow shape the Ribbon's own horizontal-scroll fix already
+    // addresses elsewhere), so a tab this far along isn't guaranteed to
+    // already be on-screen (and a tap at an off-screen coordinate warns,
+    // even where it happens not to fail outright).
+    await tester.ensureVisible(find.text('Pole-Zero'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Pole-Zero'));
     await tester.pumpAndSettle();
 
@@ -27,6 +35,8 @@ void main() {
   testWidgets('the Bode tab is reachable without error', (tester) async {
     await tester.pumpWidget(const SigmaDrawApp());
 
+    await tester.ensureVisible(find.text('Bode'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Bode'));
     await tester.pumpAndSettle();
 
@@ -40,6 +50,8 @@ void main() {
   testWidgets('the Nyquist tab is reachable without error', (tester) async {
     await tester.pumpWidget(const SigmaDrawApp());
 
+    await tester.ensureVisible(find.text('Nyquist'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Nyquist'));
     await tester.pumpAndSettle();
 
@@ -53,6 +65,8 @@ void main() {
   testWidgets('the Spectrogram tab is reachable without error', (tester) async {
     await tester.pumpWidget(const SigmaDrawApp());
 
+    await tester.ensureVisible(find.text('Spectrogram'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Spectrogram'));
     await tester.pumpAndSettle();
 
@@ -61,6 +75,54 @@ void main() {
     // Bode/Nyquist tabs above: SpectrogramPanel's own in-body heading is
     // a second match once its message branch doesn't apply.
     expect(find.text('Spectrogram'), findsWidgets);
+  });
+
+  testWidgets('the Group Delay tab is reachable without error', (tester) async {
+    await tester.pumpWidget(const SigmaDrawApp());
+
+    // The tabbed-panels area's TabBar is scrollable (11 tabs no longer
+    // fit the fixed-width sidebar at once — the same overflow shape the
+    // Ribbon's own horizontal-scroll fix already addresses elsewhere),
+    // so a tab this far along needs scrolling into view before it can
+    // be tapped.
+    await tester.ensureVisible(find.text('Group Delay'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Group Delay'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Group Delay'), findsWidgets);
+  });
+
+  testWidgets('the Impulse/Step tab is reachable without error', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const SigmaDrawApp());
+
+    await tester.ensureVisible(find.text('Impulse/Step'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Impulse/Step'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    // ImpulseStepPanel's own in-body heading is "Impulse / Step
+    // Response" (with slashes spaced out), not "Impulse/Step" (the
+    // tab's own compact label) — so, unlike the other tabs' reachability
+    // tests, only the tab label itself matches here; that's still
+    // sufficient to prove the tab switch didn't crash or go blank.
+    expect(find.text('Impulse/Step'), findsOneWidget);
+  });
+
+  testWidgets('the Root Locus tab is reachable without error', (tester) async {
+    await tester.pumpWidget(const SigmaDrawApp());
+
+    await tester.ensureVisible(find.text('Root Locus'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Root Locus'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Root Locus'), findsWidgets);
   });
 
   testWidgets('the Insert ribbon opens the equation dialog', (tester) async {

@@ -189,6 +189,37 @@ void main() {
       expect(result.zeros, isEmpty);
     });
 
+    test('returns null (not a thrown ArgumentError) when a bound gain '
+        'makes H(z) identically zero', () {
+      // Found via RootLocusPanel's own test sweeping a gain from 0 to 2:
+      // at exactly k=0, H(z)=k becomes the single-term "polynomial" {0:
+      // 0} — its own "leading" coefficient is 0, which
+      // findPolynomialRoots correctly refuses to treat as a genuine
+      // degree-0 polynomial. A finite pole/zero list isn't a meaningful
+      // answer for H(z)=0 everywhere anyway, so null (the same outcome
+      // an unbound symbol produces) is the right answer, not a crash.
+      final graph = SignalGraph(
+        blocks: {
+          'src': block('src', 'source', ports: [outPort('out1')]),
+          'g': block(
+            'g',
+            'gain',
+            ports: [inPort('in1'), outPort('out1')],
+            params: {'gain': 'k'},
+          ),
+          'snk': block('snk', 'sink', ports: [inPort('in1')]),
+        },
+        edges: [
+          edge('e1', 'src:out1', 'g:in1'),
+          edge('e2', 'g:out1', 'snk:in1'),
+        ],
+      );
+      final h = computeTransferFunction(graph)!.h;
+      expect(computePoleZero(h, bindings: {'k': 0}), isNull);
+      // A nonzero binding still works normally.
+      expect(computePoleZero(h, bindings: {'k': 3.5}), isNotNull);
+    });
+
     test('a bare z^-1 (source -> delay -> sink) is a single pole at the origin, no zeros', () {
       // H(z) is exactly `ZPowExpr(-1)` here — not wrapped in a DivExpr
       // at all, since divExpr's own smart constructor collapses a
@@ -313,6 +344,37 @@ void main() {
         ]),
       );
       expect(computeRootLocus(h, parameter: 'k', start: 0, end: 1), isNull);
+    });
+
+    test('skips one individually-degenerate swept value rather than '
+        'blanking out the whole sweep — H(z) = k is identically zero '
+        'only at exactly k=0', () {
+      const h = SymbolExpr('k');
+      final samples = computeRootLocus(
+        h,
+        parameter: 'k',
+        start: -1,
+        end: 1,
+        pointCount: 5, // values: -1, -0.5, 0, 0.5, 1.
+      )!;
+      // 4 of the 5 swept values survive; only k=0 (H(z)=0 there) is
+      // skipped — not all 5, and not none.
+      expect(samples, hasLength(4));
+      expect(samples.map((s) => s.parameterValue), isNot(contains(0)));
+      expect(
+        samples.map((s) => s.parameterValue),
+        containsAll([-1, -0.5, 0.5, 1]),
+      );
+    });
+
+    test('returns null (not an empty list) when every single swept value '
+        'is individually degenerate', () {
+      // H(z) = k * 0 = 0 for every k -- there is no value of k at all
+      // that gives a non-degenerate H(z) here (deliberately, to
+      // distinguish "returns null" from "returns an empty list" as the
+      // right answer when literally nothing in the sweep worked).
+      final h = mulExpr([const SymbolExpr('k'), const ConstExpr(0)]);
+      expect(computeRootLocus(h, parameter: 'k', start: -1, end: 1), isNull);
     });
   });
 }
