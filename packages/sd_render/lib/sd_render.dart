@@ -8,6 +8,7 @@
 /// `SvgPaintState`.
 library;
 
+export 'src/bode_plot_painter.dart';
 export 'src/geometry/svg_paint.dart';
 export 'src/geometry/svg_path_data.dart';
 export 'src/geometry/svg_shapes.dart';

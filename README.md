@@ -241,6 +241,41 @@ Built and verified so far (each gate below is green — see "Build & test"):
   Not implemented: the rest of §5.11's analysis plots (Bode, Nyquist,
   spectrogram, ...) and hierarchical/subsystem-aware analysis (the
   same scope cut Mason's formula itself already documents).
+- **§5.11 — Bode plot, evaluating that same H(z) around the unit
+  circle instead of solving it for roots.** `sd_graph` gained
+  `computeBodePlot`: magnitude (dB) and *unwrapped* phase (degrees) of
+  `H(e^{jω})` swept linearly from DC (`ω=0`) to Nyquist (`ω=π`) —
+  linear, not log, since a discrete-time transfer function's whole
+  meaningful domain is that one finite interval, unlike a classical
+  continuous-time Bode plot's many-decade log axis. Reuses
+  `computePoleZero`'s own `rationalPolynomials` reading of `H(z)` as a
+  ratio of `z^-1`-power sparse maps, but evaluates each directly via
+  `Complex` arithmetic at a specific point rather than clearing a
+  common factor and solving for roots (evaluating at `z=e^{jω}` is
+  always well-defined — that point is never zero — so none of
+  `_clearedZPolynomial`'s root-finding-specific care is needed here).
+  Verified with several hand-derivable cases: a pure gain (flat
+  magnitude, zero phase at *every* frequency), a pure unit delay
+  (exactly 0 dB, phase exactly `-ω` — an all-pass, linear-phase system,
+  checked at every swept point, not just one), and the same biquad
+  `pole_zero_test.dart` already verifies — its independently-confirmed
+  zeros at `z=±1` land exactly at this plot's DC and Nyquist ends,
+  cross-checking the two features against each other from two
+  unrelated code paths (root-finding vs. point-evaluation). `sd_render`
+  gained `BodePlotPainter` (a two-pane magnitude/phase chart; a
+  magnitude of `±infinity` — a pole or zero landing exactly on the
+  unit circle — clamps to the chart's own axis range rather than
+  running off it, the same convention real plotting tools use);
+  `sd_ui`'s new `BodePanel` mirrors `PoleZeroPanel`'s message-state
+  pattern exactly. A 6th app tab, "Bode", makes it reachable. Building
+  this also surfaced a genuine ribbon usability gap, fixed alongside
+  it: `RibbonAction`'s caption label was a plain, non-interactive
+  `Text` sibling next to the real tap target (`IconButton`) — found by
+  a new app-level test that (correctly, per real ribbon UX) tapped a
+  button by its label rather than its icon and got nothing. Fixed by
+  wrapping the whole control in one `InkWell`. 25 new tests (9
+  `sd_graph`, 8 `sd_render`, 6 `sd_ui` — including the ribbon tap-target
+  regression test — 2 the app).
 - **§10's Home-tab "Clipboard" group, in miniature — Delete/Copy/
   Paste.** `sd_document` gained `cloneNode` (a generic deep, fully-
   detached clone of any node — the foundation copy/paste needs, since
@@ -341,8 +376,8 @@ faked. Concretely still missing:
   cascade are generated (see above) but lattice/parallel/wave-digital/
   comb/CIC/state-space forms aren't; §5.7 (comms/modulation — mixer,
   NCO, PLL, Costas loop, ...) and §5.8 (adaptive/statistical — LMS/RLS,
-  ...) are entirely unimplemented. §5.11's pole-zero plot is done (see
-  above) — Bode, Nyquist, and spectrogram plots aren't. None of the filter
+  ...) are entirely unimplemented. §5.11's pole-zero and Bode plots are
+  done (see above) — Nyquist and spectrogram plots aren't. None of the filter
   generators have a palette/drag-to-canvas entry point yet either —
   they're called directly (as the tests do); wiring one into
   `StencilPalette`/`StencilCanvasArea` (which only knows single-block
@@ -372,12 +407,12 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 ```
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
-/packages/sd_graph         # ✅ Phase 4+8+5.11 — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero
+/packages/sd_graph         # ✅ Phase 4+8+5.11 — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode
 /packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR/biquad/cascade generators
 /packages/sd_render        # ✅ Phase 2 (+connectors) — scene, pan/zoom, selection, port-to-port wiring
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
-/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert), equation dialog, palette/tree/inspector/problems/H(z)/pole-zero
+/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert), equation dialog, palette/tree/inspector/problems/H(z)/pole-zero/Bode
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
 /packages/sd_export        # ✅ Phase 10 (partial) — TikZ export, pdflatex-verified; PDF/PNG/EPS/print pending
 /packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app
@@ -586,6 +621,36 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   duplicating it would add UI surface (and tests) without adding
   capability — a deliberate scope trim, not an oversight, revisited
   only if docking later makes the sidebar itself optional/hideable.
+- **The Bode plot sweeps `omega` linearly over `[0, pi]`, not a
+  classical continuous-time Bode plot's log-frequency axis.** A
+  log axis exists to make many *decades* of frequency (near-DC out to
+  far past a system's corner frequencies) readable on one chart; a
+  discrete-time transfer function's entire meaningful domain is the
+  single finite interval `[0, pi]` rad/sample (DC to Nyquist) — the
+  same reason digital-filter tools like MATLAB's `freqz` plot linearly
+  over that interval rather than borrowing the continuous-time
+  convention.
+- **`computeBodePlot` evaluates `H(z)` directly via `Complex`
+  arithmetic at `z = e^{jω}`, rather than reusing
+  `computePoleZero`'s leading-coefficient-first, common-factor-cleared
+  polynomial array.** That clearing step (`_clearedZPolynomial`) exists
+  specifically so `findPolynomialRoots` never sees a spurious zero
+  leading coefficient — a concern only *root-finding* has. Evaluating
+  at one specific, always-nonzero point (`e^{jω}` is never `0`) has no
+  such problem, so the Bode path evaluates `rationalPolynomials`'
+  sparse `z^-1`-power maps directly instead, needing only a small
+  `Complex`-valued Horner evaluation, not the reversed-polynomial care
+  `pole_zero.dart`'s own doc comments document at length.
+- **`RibbonAction`'s tap target is the whole control (icon + caption),
+  via an outer `InkWell` around the inner `IconButton`, not the icon
+  alone.** Found missing by a new app-level test that tapped a ribbon
+  button by its visible label (exactly what a real user would try) and
+  got nothing — the caption was a plain, inert `Text` sibling. The
+  inner `IconButton` stays a real, independently findable widget (so
+  every existing `find.widgetWithIcon(IconButton, ...)`-based test kept
+  working unchanged); the outer `InkWell` only ever catches a tap that
+  lands outside it, on the caption — Flutter's gesture arena resolves
+  the overlap rather than double-firing.
 
 ## Build & test
 

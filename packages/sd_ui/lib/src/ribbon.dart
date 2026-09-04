@@ -162,24 +162,35 @@ class _RibbonActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The whole control (icon + caption) is one tap target, wrapped in an
+    // InkWell around the IconButton it contains — a real ribbon button's
+    // label is clickable too, not just its icon. The inner IconButton
+    // stays a real, independently-findable widget (existing finders like
+    // `find.widgetWithIcon(IconButton, ...)` keep working unchanged); the
+    // outer InkWell only ever catches a tap that lands *outside* it, on
+    // the caption below — Flutter's gesture arena resolves the overlap
+    // correctly rather than double-firing.
     return SizedBox(
       width: 64,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(action.icon),
-            tooltip: action.tooltip ?? action.label,
-            onPressed: action.onPressed,
-          ),
-          Text(
-            action.label,
-            style: const TextStyle(fontSize: 10),
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+      child: InkWell(
+        onTap: action.onPressed,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(action.icon),
+              tooltip: action.tooltip ?? action.label,
+              onPressed: action.onPressed,
+            ),
+            Text(
+              action.label,
+              style: const TextStyle(fontSize: 10),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }

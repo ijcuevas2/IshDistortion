@@ -4,11 +4,12 @@
 /// an equation-insert dialog wiring `sd_latex`'s compile pipeline to the
 /// document for the first time, the stencil palette (search + drag), a
 /// drop-to-place-and-connect-and-draw canvas wrapper, the element tree,
-/// the property inspector, a live Problems panel, and live H(z)/pole-zero
-/// readouts (§4/§5.11's semantic-graph analysis, surfaced in the UI).
+/// the property inspector, a live Problems panel, and live H(z)/pole-zero/
+/// Bode readouts (§4/§5.11's semantic-graph analysis, surfaced in the UI).
 /// Docking and the status bar remain unbuilt.
 library;
 
+export 'src/bode_panel.dart';
 export 'src/document_listenable.dart';
 export 'src/element_tree.dart';
 export 'src/insert_latex_dialog.dart';

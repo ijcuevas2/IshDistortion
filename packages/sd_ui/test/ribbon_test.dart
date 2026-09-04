@@ -123,6 +123,36 @@ void main() {
       expect(tapped, 1);
     });
 
+    testWidgets('tapping an action\'s caption label also invokes it', (
+      tester,
+    ) async {
+      // Not just the icon: a real ribbon button's whole control (icon +
+      // label) is one tap target.
+      var tapped = 0;
+      await tester.pumpWidget(
+        _harness([
+          RibbonTab(
+            title: 'Home',
+            groups: [
+              RibbonGroup(
+                title: 'Clipboard',
+                actions: [
+                  RibbonAction(
+                    icon: Icons.content_copy,
+                    label: 'Copy',
+                    onPressed: () => tapped++,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ]),
+      );
+
+      await tester.tap(find.text('Copy'));
+      expect(tapped, 1);
+    });
+
     testWidgets('a disabled action renders as a disabled IconButton', (
       tester,
     ) async {

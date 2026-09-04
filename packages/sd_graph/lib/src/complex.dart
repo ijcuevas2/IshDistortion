@@ -32,6 +32,12 @@ class Complex {
 
   double abs() => math.sqrt(re * re + im * im);
 
+  /// This number's angle in the complex plane (radians), i.e.
+  /// `atan2(im, re)` — `0` for a positive real number, `pi`/`-pi` at the
+  /// branch cut along the negative real axis (whichever sign `atan2`
+  /// itself returns there; never relied on to be one or the other).
+  double get phase => math.atan2(im, re);
+
   /// Whether this is within [tolerance] of being a real number (a
   /// negligible imaginary part) — DSP coefficients are always real, so a
   /// found root with `im` that's merely floating-point noise around 0

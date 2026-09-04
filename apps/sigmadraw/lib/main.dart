@@ -227,7 +227,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
         actions: [
           RibbonAction(
             icon: Icons.functions,
-            label: 'Equation',
+            label: 'New Equation',
             tooltip: 'Insert a LaTeX equation',
             onPressed: _insertEquation,
           ),
@@ -287,7 +287,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                       child: Material(
                         elevation: 1,
                         child: DefaultTabController(
-                          length: 5,
+                          length: 6,
                           child: Column(
                             children: [
                               const TabBar(
@@ -298,6 +298,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                                   Tab(text: 'Problems'),
                                   Tab(text: 'H(z)'),
                                   Tab(text: 'Pole-Zero'),
+                                  Tab(text: 'Bode'),
                                 ],
                               ),
                               Expanded(
@@ -319,6 +320,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                                     ),
                                     TransferFunctionPanel(document: _document),
                                     PoleZeroPanel(document: _document),
+                                    BodePanel(document: _document),
                                   ],
                                 ),
                               ),
