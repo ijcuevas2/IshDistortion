@@ -1,0 +1,33 @@
+# Melos / Dart & Flutter workspace — root ignores.
+# Each package also carries its own .gitignore from `flutter create`/`dart create`;
+# this covers repo-wide and workspace-level artifacts.
+
+# Dart / Flutter tooling
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+pubspec.lock
+pubspec_overrides.yaml
+!/pubspec.lock
+
+# Melos
+.melos_tool/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LaTeX / dvisvgm scratch (sd_latex cache, Phase 9)
+*.aux
+*.log
+*.synctex.gz
+
+# Local scratch
+*.local.yaml

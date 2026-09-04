@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Created with SigmaDraw -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sd="https://sigmadraw.app/ns/dsp/1.0" xmlns:test="https://example.org/foreign" width="800" height="600" viewBox="0 0 800 600" sd:schema="1.0" sd:sampleRate="48000" sd:defaultDtype="real">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z"/>
+    </marker>
+    <symbol id="gainTriangle" viewBox="0 0 8 8">
+      <path d="M0,0 L8,4 L0,8 Z"/>
+    </symbol>
+    <style><![CDATA[
+      .sd-wire { stroke: #000000; }
+    ]]></style>
+  </defs>
+  <g inkscape:groupmode="layer" inkscape:label="Signal Flow" sd:layer="layer-1">
+    <g sd:type="gain" sd:id="blk1" sd:label="k" sd:params="{&quot;gain&quot;:2.5}" sd:ports="[{&quot;id&quot;:&quot;in1&quot;,&quot;dir&quot;:&quot;in&quot;,&quot;dtype&quot;:&quot;real&quot;},{&quot;id&quot;:&quot;out1&quot;,&quot;dir&quot;:&quot;out&quot;,&quot;dtype&quot;:&quot;real&quot;}]" transform="translate(100,100)">
+      <use xlink:href="#gainTriangle" width="32" height="32"/>
+      <text x="16" y="40">k</text>
+    </g>
+    <path sd:edge="e1" sd:from="blk1:out1" sd:to="blk2:in1" sd:route="orthogonal" sd:signalLabel="x[n]" class="sd-wire" d="M132,116 L220,116" marker-end="url(#arrow)" vector-effect="non-scaling-stroke"/>
+    <path sd:stroke="s1" sd:pressure="[0.2,0.5,0.8,0.4]" d="M10,10 L20,10 L20,20 L10,20 Z" fill="#000000"/>
+  </g>
+  <test:annotation test:confidence="0.9">unrecognized but preserved</test:annotation>
+</svg>
