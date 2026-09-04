@@ -69,4 +69,23 @@ void main() {
     // this dialog's own reaction to success/failure is covered in
     // sd_ui's export_pdf_dialog_test.dart via an injected fake.
   });
+
+  testWidgets('the Export ribbon opens the PNG export dialog', (tester) async {
+    await tester.pumpWidget(const SigmaDrawApp());
+
+    await tester.tap(find.text('Export'));
+    await tester.pump();
+    await tester.tap(find.text('PNG'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Export to PNG'), findsOneWidget);
+    // Same reasoning as the PDF dialog test above for not going on to
+    // tap Export: exportToPng's real dart:ui rendering calls need
+    // tester.runAsync to complete inside a widget test (see
+    // ExportPngDialog's own doc comment), which doesn't mix with a
+    // simulated tester.tap — covered instead directly in sd_export's
+    // png_export_test.dart and via an injected fake in sd_ui's
+    // export_png_dialog_test.dart.
+  });
 }

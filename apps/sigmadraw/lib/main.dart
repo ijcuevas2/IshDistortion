@@ -184,6 +184,17 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
     }
   }
 
+  Future<void> _exportPng() async {
+    final path = await showDialog<String>(
+      context: context,
+      builder: (_) => ExportPngDialog(document: _document),
+    );
+    if (path != null && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Exported to $path')));
+    }
+  }
+
   /// The ribbon's Home tab: Clipboard/Undo/Tools/Zoom groups. Rebuilt from
   /// inside a [ListenableBuilder] merging every model an action's enabled
   /// state depends on, so e.g. "Undo" reads disabled the instant
@@ -324,6 +335,17 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
             label: 'PDF',
             tooltip: 'Export this diagram to PDF',
             onPressed: _exportPdf,
+          ),
+        ],
+      ),
+      RibbonGroup(
+        title: 'Raster',
+        actions: [
+          RibbonAction(
+            icon: Icons.image_outlined,
+            label: 'PNG',
+            tooltip: 'Export this diagram to PNG',
+            onPressed: _exportPng,
           ),
         ],
       ),

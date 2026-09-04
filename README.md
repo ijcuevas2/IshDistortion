@@ -141,8 +141,9 @@ Built and verified so far (each gate below is green — see "Build & test"):
   (there's no native file-picker dependency here) can easily name an
   unwritable location — `exportToPdf`'s own compile step can succeed
   before failing only on the final copy. 6 new `sd_ui` tests, 1 new app
-  test. Not implemented: PNG@DPI, EPS/PS, and print dialogs, and a real
-  native file-save picker (a plain text field stands in for one).
+  test. Not implemented at the time: PNG@DPI (see below — landed in a
+  later checkpoint), EPS/PS and print dialogs, and a real native
+  file-save picker (a plain text field stands in for one).
 - **Phase 9 — math rendering, both paths §11 asks for.**
   `sd_graph` gained `Expr.toTex()` (mirrors `toString()`'s precedence
   handling exactly, substituting real LaTeX: braced `z^{-k}`, `\frac`,
@@ -414,9 +415,43 @@ Built and verified so far (each gate below is green — see "Build & test"):
   plain text field stands in for one, same as `ExportPdfDialog`), "Save
   As" vs. "Save" distinction, a document-dirty/unsaved-changes
   indicator, and prompting before an Open discards unsaved work.
+- **Phase 10 — PNG export, closing §11's "PNG@DPI" target.**
+  `sd_export` gained `exportToPng`: renders the document through the
+  *exact same* on-screen scene-painting code `SigmaCanvas` itself uses
+  (`buildScene` + a newly-extracted `paintSceneNode` — factored out of
+  `ScenePainter`, which now just calls it, so the live canvas and this
+  offscreen export can never quietly diverge into two different
+  renderers) onto an offscreen `dart:ui` `PictureRecorder`/`Canvas`,
+  sized to the document's own declared `width`/`height` (times an
+  optional `scale`, for a "2x" export) rather than its content's
+  bounding box — the same convention any standard SVG viewer uses for
+  those attributes. Deliberately *not* run through `Isolate.run` (see
+  its own doc comment): `dart:ui`'s rendering primitives are tied to
+  the single UI isolate a Flutter engine runs on, so there's no
+  background isolate to hand this off to — `Picture.toImage`/
+  `Image.toByteData` are still genuinely async (real rasterization on
+  the engine's own raster thread), so this doesn't block the event
+  loop the way a long synchronous computation would.
+  `sd_ui` gained `ExportPngDialog` and the app's Export tab a "Raster"
+  group alongside "Vector"'s PDF action. Testing this hit a *third*
+  variant of this session's `Isolate.run`/`testWidgets` finding:
+  `Picture.toImage`/`toByteData` hang the same way `Isolate.run` does
+  when awaited directly in a `testWidgets` test — but `tester.runAsync`
+  (Flutter's own documented fix for exactly this) resolved it
+  immediately for a *direct* call to `exportToPng`, no workaround
+  needed, in `sd_export`'s own `png_export_test.dart`. It does *not*,
+  however, mix with `tester.tap`/`pumpAndSettle` calls inside its own
+  callback — so `ExportPngDialog`'s own widget tests (which need to
+  *trigger* the export via a simulated tap, not call it directly) still
+  needed the same injectable-seam pattern `ExportPdfDialog` uses for an
+  unrelated reason. See the standalone `isolate-run-testwidgets-hang`
+  memory (kept in sync with all three findings) for the fuller writeup.
+  4 new `sd_export` tests (real, `runAsync`-wrapped, decoding the
+  output back to confirm actual pixel dimensions — not just "a file
+  came out"), 6 new `sd_ui` tests, 1 new app test.
 
 **Next, if this continues**: the 5 native pen plugins (6/7), the rest
-of vector export — PNG/EPS/print (10) —, the rest of §5.11's analysis
+of vector export — EPS/print (10) —, the rest of §5.11's analysis
 plots, and polish (11) are all **not started**, and §5.5/§5.7/§5.8
 remain thin. Given the true scope of §0-§15 (a
 production, cross-platform, multi-native-plugin app), these were not
@@ -469,14 +504,14 @@ faked. Concretely still missing:
   remains is the built-in DSP label helpers (gain-coefficient-on-
   triangle, `x[n]`/`y[n]`-on-edge, ...) beyond what a stencil already
   renders itself, and the optional experimental WASM-TeX fallback.
-- **The rest of vector export (§11, Phase 10): PNG@DPI, EPS/PS, and
-  print dialogs.** TikZ and PDF export are both done, and PDF now has a
-  ribbon UI entry point too (see above) — SVG native/plain export
+- **The rest of vector/raster export (§11, Phase 10): EPS/PS and print
+  dialogs.** TikZ, PDF, and PNG export are all done, and PDF/PNG both
+  have a ribbon UI entry point (see above) — SVG native/plain export
   (Phase 1) and TikZ still don't have one (TikZ's own output is meant
   to be pasted into a LaTeX document, so a file-save dialog isn't
   obviously the right UI for it anyway; SVG's is a smaller, real gap).
   There's also no real native file-save picker anywhere yet — every
-  export path that needs one uses a plain text field for the output
+  export/save/open path that needs one uses a plain text field for the
   path instead.
 - **Polish (§11, Phase 11)**: autosave, templates, dark mode, i18n,
   accessibility, perf tuning at the ≥10,000-element scale, tablet UX.
@@ -496,9 +531,9 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_render        # ✅ Phase 2 (+connectors) — scene, pan/zoom, selection, port-to-port wiring
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
-/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode
+/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF/PNG-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
-/packages/sd_export        # ✅ Phase 10 (partial) — TikZ+PDF export (PDF has a ribbon UI entry point), pdflatex-verified; PNG/EPS/print pending
+/packages/sd_export        # ✅ Phase 10 (partial) — TikZ+PDF+PNG export (PDF/PNG have ribbon UI entry points); EPS/print pending
 /packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app
 /plugins/sd_pen_*           # placeholder READMEs — Phase 6 native pen plugins
 /docs                       # architecture-mining notes (§1) + this project's own notes
@@ -814,6 +849,29 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   change that never clips content unreachably, and is itself a normal,
   expected ribbon behavior (Office's own ribbon does this) rather than
   a workaround specific to this one test's window size.
+- **`exportToPng` reuses `ScenePainter`'s own node-painting logic
+  (extracted to a standalone `paintSceneNode` function `ScenePainter`
+  itself now calls) rather than writing separate paint code for
+  offscreen export.** The alternative — a second implementation walking
+  `SceneNode`/drawing paths/paints for the export path specifically —
+  risks the on-screen canvas and an exported image *silently* drifting
+  apart over time as one gets a bugfix or a new node kind the other
+  doesn't. One function used both ways structurally guarantees "what
+  you see is what gets exported" rather than relying on two
+  implementations happening to agree; `ScenePainter`'s own contract and
+  tests are unchanged.
+- **`ExportPngDialog` still needs an injectable `exportPng` seam even
+  though `exportToPng` itself has no `Isolate.run`/external process —
+  `tester.runAsync` alone isn't enough once the call is *triggered by a
+  simulated tap* rather than made directly.** `runAsync` fixed testing
+  `exportToPng` directly (a plain call in a test body — see
+  `png_export_test.dart`), but wrapping a `tester.tap`+`pumpAndSettle`
+  sequence inside `runAsync` (to exercise the dialog's own Export
+  button) made `pumpAndSettle` itself time out — `runAsync`'s callback
+  is documented to hold only the raw async operation, not `tester.*`
+  interactions. The seam is the same shape as `ExportPdfDialog.exportPdf`
+  but for a different underlying reason; see the standalone
+  `isolate-run-testwidgets-hang` memory for the fuller comparison.
 
 ## Build & test
 
