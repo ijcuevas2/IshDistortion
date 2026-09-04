@@ -123,6 +123,227 @@ FilterStructure buildFirDirectForm({
   );
 }
 
+/// §5.5: FIR, transposed direct form — the same `H(z)` as
+/// [buildFirDirectForm] (`H(z) = Σ coefficients[i] · z^-i`), realized
+/// with the network-transposition theorem's dual topology instead: the
+/// direct form's input-side tapped-delay-line + pickoff becomes a
+/// single pickoff (no delay chain on the input at all — every gain
+/// reads the *undelayed* input directly) feeding an accumulation chain
+/// built from the *last* coefficient down to the first, with a delay
+/// on each running-sum edge instead of on the input:
+/// `w[p-1] = c[p-1]·x[n]`; `w[i] = c[i]·x[n] + z^-1{w[i+1]}` for
+/// `i = p-2 .. 0`; `y[n] = w[0]`. Transposing a direct-form network
+/// swaps the roles of its pickoffs and summing junctions and reverses
+/// its signal flow — see this function's own test for the by-hand
+/// derivation confirming this produces the identical `H(z)`.
+FilterStructure buildFirTransposedDirectForm({
+  required String idPrefix,
+  required List<num> coefficients,
+  double x = 0,
+  double y = 0,
+}) {
+  if (coefficients.isEmpty) {
+    throw ArgumentError.value(
+      coefficients,
+      'coefficients',
+      'must not be empty',
+    );
+  }
+  final elements = <SdElement>[];
+  var seq = 0;
+  String nextId(String kind) => '$idPrefix-$kind${seq++}';
+  void wire(String from, String fromPort, String to, String toPort) =>
+      elements.add(
+        buildEdge(
+          id: nextId('e'),
+          fromBlock: from,
+          fromPort: fromPort,
+          toBlock: to,
+          toPort: toPort,
+        ),
+      );
+
+  final n = coefficients.length;
+  final tapId = nextId('tap');
+  elements.add(
+    pickoffNode.instantiate(instanceId: tapId, x: x, y: y + _stageDy),
+  );
+
+  final gainIds = <String>[];
+  for (var i = 0; i < n; i++) {
+    final id = nextId('g');
+    elements.add(
+      gain.instantiate(
+        instanceId: id,
+        x: x + _stageDx,
+        y: y + i * _stageDy,
+        params: {'gain': coefficients[i]},
+        label: 'c$i',
+      ),
+    );
+    wire(tapId, 'out1', id, 'in1');
+    gainIds.add(id);
+  }
+
+  var accId = gainIds[n - 1];
+  var accPort = 'out1';
+  for (var i = n - 2; i >= 0; i--) {
+    final delayId = nextId('d');
+    elements.add(
+      delay.instantiate(
+        instanceId: delayId,
+        x: x + (n - i) * _stageDx,
+        y: y + (n - 1) * _stageDy,
+      ),
+    );
+    wire(accId, accPort, delayId, 'in1');
+
+    final addId = nextId('add');
+    elements.add(
+      adder.instantiate(
+        instanceId: addId,
+        x: x + (n - i + 1) * _stageDx,
+        y: y + i * _stageDy,
+      ),
+    );
+    wire(gainIds[i], 'out1', addId, 'in1');
+    wire(delayId, 'out1', addId, 'in2');
+
+    accId = addId;
+    accPort = 'out1';
+  }
+
+  return FilterStructure(
+    elements: elements,
+    inputBlockId: tapId,
+    inputPortId: 'in1',
+    outputBlockId: accId,
+    outputPortId: accPort,
+  );
+}
+
+/// §5.5: FIR, (two-multiplier) lattice — parameterized by
+/// [reflectionCoefficients] (`k_1..k_p`), the lattice structure's own
+/// native parameters, unlike [buildFirDirectForm]/
+/// [buildFirTransposedDirectForm]'s direct `b_i` coefficients (though a
+/// order-`p` lattice still realizes a degree-`p` FIR `H(z)` — see this
+/// function's own test for the closed-form relationship for small `p`).
+///
+/// Each stage `m` (`1..p`) carries a forward signal `f` and backward
+/// signal `g`, with `f_0[n] = g_0[n] = x[n]`:
+/// `f_m[n] = f_{m-1}[n] + k_m·g_{m-1}[n-1]`
+/// `g_m[n] = k_m·f_{m-1}[n] + g_{m-1}[n-1]`
+/// `y[n] = f_p[n]` — the final stage's own `g_p[n]` output is left
+/// unwired: a real lattice's "backward" output, just one this project's
+/// H(z)-only analysis has no use for (an unwired output port is not a
+/// validation error, only a Problems-panel-level warning, and doesn't
+/// affect Mason's gain formula since it isn't part of any source-to-
+/// sink path).
+FilterStructure buildFirLattice({
+  required String idPrefix,
+  required List<num> reflectionCoefficients,
+  double x = 0,
+  double y = 0,
+}) {
+  if (reflectionCoefficients.isEmpty) {
+    throw ArgumentError.value(
+      reflectionCoefficients,
+      'reflectionCoefficients',
+      'must not be empty',
+    );
+  }
+  final elements = <SdElement>[];
+  var seq = 0;
+  String nextId(String kind) => '$idPrefix-$kind${seq++}';
+  void wire(String from, String fromPort, String to, String toPort) =>
+      elements.add(
+        buildEdge(
+          id: nextId('e'),
+          fromBlock: from,
+          fromPort: fromPort,
+          toBlock: to,
+          toPort: toPort,
+        ),
+      );
+
+  final tapId = nextId('tap');
+  elements.add(
+    pickoffNode.instantiate(instanceId: tapId, x: x, y: y + 1.5 * _stageDy),
+  );
+
+  var fBlock = tapId, fPort = 'out1';
+  var gBlock = tapId, gPort = 'out1';
+
+  for (var m = 0; m < reflectionCoefficients.length; m++) {
+    final k = reflectionCoefficients[m];
+    final label = 'k${m + 1}';
+    final stageX = x + (m + 1) * _stageDx;
+
+    final dg = nextId('d');
+    elements.add(
+      delay.instantiate(instanceId: dg, x: stageX, y: y + 3 * _stageDy),
+    );
+    wire(gBlock, gPort, dg, 'in1');
+
+    // k_m applied to the delayed backward signal, feeding f_m.
+    final kf = nextId('g');
+    elements.add(
+      gain.instantiate(
+        instanceId: kf,
+        x: stageX,
+        y: y,
+        params: {'gain': k},
+        label: label,
+      ),
+    );
+    wire(dg, 'out1', kf, 'in1');
+
+    // k_m applied to the (undelayed) forward signal, feeding g_m.
+    final kg = nextId('g');
+    elements.add(
+      gain.instantiate(
+        instanceId: kg,
+        x: stageX,
+        y: y + 4 * _stageDy,
+        params: {'gain': k},
+        label: label,
+      ),
+    );
+    wire(fBlock, fPort, kg, 'in1');
+
+    final addF = nextId('add');
+    elements.add(
+      adder.instantiate(instanceId: addF, x: stageX + _stageDx, y: y),
+    );
+    wire(fBlock, fPort, addF, 'in1');
+    wire(kf, 'out1', addF, 'in2');
+
+    final addG = nextId('add');
+    elements.add(
+      adder.instantiate(
+        instanceId: addG,
+        x: stageX + _stageDx,
+        y: y + 4 * _stageDy,
+      ),
+    );
+    wire(kg, 'out1', addG, 'in1');
+    wire(dg, 'out1', addG, 'in2');
+
+    fBlock = addF;
+    fPort = 'out1';
+    gBlock = addG;
+    gPort = 'out1';
+  }
+
+  return FilterStructure(
+    elements: elements,
+    inputBlockId: tapId,
+    inputPortId: 'in1',
+    outputBlockId: fBlock,
+    outputPortId: fPort,
+  );
+}
+
 /// §5.5: IIR, Direct Form II Transposed biquad — the exact topology
 /// verified against Mason's gain formula in `sd_graph`'s test suite
 /// (`mason_test.dart`'s biquad case):
@@ -238,6 +459,322 @@ FilterStructure buildBiquadDf2t({
     inputPortId: 'in1',
     outputBlockId: addY,
     outputPortId: 'out1',
+  );
+}
+
+/// §5.5: IIR, Direct Form I, generalized to arbitrary order —
+/// `H(z) = (b[0] + b[1]·z⁻¹ + ... + b[M]·z⁻ᴹ) / (1 + a[0]·z⁻¹ + ... +
+/// a[N-1]·z⁻ᴺ)` ([a] holds `a_1..a_N`; the implicit `a_0 = 1` is never
+/// stored, the same convention [buildBiquadDf2t]'s `a1`/`a2` already
+/// use). Unlike the canonical/minimal [buildIirDirectFormII] (which
+/// shares one `max(M,N)`-long delay line between the numerator and
+/// denominator taps), Direct Form I is the textbook *non-minimal*
+/// realization: a separate `M`-long delay line for [b]'s taps on `x`
+/// and a separate `N`-long delay line for [a]'s taps on the final,
+/// already-computed `y` fed back — `M+N` delays total, not `max(M,N)`.
+/// That non-minimality is the whole pedagogical point of drawing DF-I
+/// as its own structure rather than only ever using DF-II.
+FilterStructure buildIirDirectFormI({
+  required String idPrefix,
+  required List<num> b,
+  required List<num> a,
+  double x = 0,
+  double y = 0,
+}) {
+  if (b.isEmpty) {
+    throw ArgumentError.value(b, 'b', 'must not be empty');
+  }
+  if (a.isEmpty) {
+    throw ArgumentError.value(
+      a,
+      'a',
+      'must not be empty (feedback coefficients a_1..a_N; a purely '
+          'feedforward filter has its own dedicated generators — '
+          'buildFirDirectForm et al.)',
+    );
+  }
+  final elements = <SdElement>[];
+  var seq = 0;
+  String nextId(String kind) => '$idPrefix-$kind${seq++}';
+  void wire(String from, String fromPort, String to, String toPort) =>
+      elements.add(
+        buildEdge(
+          id: nextId('e'),
+          fromBlock: from,
+          fromPort: fromPort,
+          toBlock: to,
+          toPort: toPort,
+        ),
+      );
+
+  final tapX = nextId('tap');
+  elements.add(
+    pickoffNode.instantiate(instanceId: tapX, x: x, y: y + _stageDy),
+  );
+
+  // Feedforward: b[0]*x[n] + b[1]*x[n-1] + ... + b[M]*x[n-M].
+  final xTaps = <String>[tapX];
+  for (var i = 1; i < b.length; i++) {
+    final d = nextId('d');
+    elements.add(
+      delay.instantiate(instanceId: d, x: x + i * _stageDx, y: y + _stageDy),
+    );
+    wire(xTaps.last, 'out1', d, 'in1');
+    xTaps.add(d);
+  }
+  final bGains = <String>[];
+  for (var i = 0; i < b.length; i++) {
+    final g = nextId('g');
+    elements.add(
+      gain.instantiate(
+        instanceId: g,
+        x: x + i * _stageDx,
+        y: y,
+        params: {'gain': b[i]},
+        label: 'b$i',
+      ),
+    );
+    wire(xTaps[i], 'out1', g, 'in1');
+    bGains.add(g);
+  }
+  var acc = bGains[0];
+  var accPort = 'out1';
+  for (var i = 1; i < bGains.length; i++) {
+    final add = nextId('add');
+    elements.add(
+      adder.instantiate(
+        instanceId: add,
+        x: x + i * _stageDx,
+        y: y + 2 * _stageDy,
+      ),
+    );
+    wire(acc, accPort, add, 'in1');
+    wire(bGains[i], 'out1', add, 'in2');
+    acc = add;
+    accPort = 'out1';
+  }
+
+  // Feedback: subtract a[0]*y[n-1] + ... + a[N-1]*y[n-N]. The delay
+  // chain's own input (dys[0].in1) is wired only at the very end, once
+  // `acc` names the final, fully-combined y[n] node — the real signal
+  // graph has no cycle problem here (the delay breaks it), only the
+  // *construction order* would, since dys[0]'s source doesn't exist
+  // yet when the chain itself is built.
+  final stageX = x + b.length * _stageDx;
+  final dys = <String>[];
+  for (var i = 0; i < a.length; i++) {
+    final d = nextId('d');
+    elements.add(
+      delay.instantiate(
+        instanceId: d,
+        x: stageX + i * _stageDx,
+        y: y + 3 * _stageDy,
+      ),
+    );
+    dys.add(d);
+  }
+  for (var i = 1; i < dys.length; i++) {
+    wire(dys[i - 1], 'out1', dys[i], 'in1');
+  }
+  final aGains = <String>[];
+  for (var i = 0; i < a.length; i++) {
+    final g = nextId('g');
+    elements.add(
+      gain.instantiate(
+        instanceId: g,
+        x: stageX + i * _stageDx,
+        y: y,
+        params: {'gain': a[i]},
+        label: 'a${i + 1}',
+      ),
+    );
+    wire(dys[i], 'out1', g, 'in1');
+    aGains.add(g);
+  }
+  for (var i = 0; i < aGains.length; i++) {
+    final add = nextId('add');
+    elements.add(
+      adder.instantiate(
+        instanceId: add,
+        x: stageX + (i + 1) * _stageDx,
+        y: y + 2 * _stageDy,
+        params: {
+          'signs': ['+', '-'],
+        },
+      ),
+    );
+    wire(acc, accPort, add, 'in1');
+    wire(aGains[i], 'out1', add, 'in2');
+    acc = add;
+    accPort = 'out1';
+  }
+  wire(acc, accPort, dys[0], 'in1');
+
+  return FilterStructure(
+    elements: elements,
+    inputBlockId: tapX,
+    inputPortId: 'in1',
+    outputBlockId: acc,
+    outputPortId: accPort,
+  );
+}
+
+/// §5.5: IIR, Direct Form II (canonical, non-transposed), generalized to
+/// arbitrary matched order `N` — `H(z) = (b[0] + b[1]·z⁻¹ + ... +
+/// b[N]·z⁻ᴺ) / (1 + a[0]·z⁻¹ + ... + a[N-1]·z⁻ᴺ)` ([b] one longer than
+/// [a], the same matched-order shape [buildBiquadDf2t] fixes at `N=2`).
+/// Uses exactly `N` delays (not [buildIirDirectFormI]'s `M+N`) by
+/// sharing ONE delay line, computing the intermediate `w[n] = x[n] -
+/// a[0]·w[n-1] - ... - a[N-1]·w[n-N]` first and reading both the
+/// feedback *and* the feedforward taps off that same line — the
+/// "canonical"/minimal-delay realization Direct Form II is named for.
+/// (This is the *non*-transposed form; [buildBiquadDf2t] already covers
+/// the transposed one, whose own delays sit between partial sums
+/// instead of holding `w` directly.)
+FilterStructure buildIirDirectFormII({
+  required String idPrefix,
+  required List<num> b,
+  required List<num> a,
+  double x = 0,
+  double y = 0,
+}) {
+  if (a.isEmpty) {
+    throw ArgumentError.value(a, 'a', 'must not be empty');
+  }
+  if (b.length != a.length + 1) {
+    throw ArgumentError(
+      'b must have exactly one more coefficient than a for a matched-'
+      'order system (b: b[0]..b[N], a: a[1]..a[N]) — got b.length='
+      '${b.length}, a.length=${a.length}',
+    );
+  }
+  final n = a.length;
+  final elements = <SdElement>[];
+  var seq = 0;
+  String nextId(String kind) => '$idPrefix-$kind${seq++}';
+  void wire(String from, String fromPort, String to, String toPort) =>
+      elements.add(
+        buildEdge(
+          id: nextId('e'),
+          fromBlock: from,
+          fromPort: fromPort,
+          toBlock: to,
+          toPort: toPort,
+        ),
+      );
+
+  final tapX = nextId('tap');
+  elements.add(
+    pickoffNode.instantiate(instanceId: tapX, x: x, y: y + 2 * _stageDy),
+  );
+
+  // w[n]'s own shared delay line (fed back from `w` itself, wired last).
+  final dws = <String>[];
+  for (var i = 0; i < n; i++) {
+    final d = nextId('d');
+    elements.add(
+      delay.instantiate(
+        instanceId: d,
+        x: x + (i + 2) * _stageDx,
+        y: y + 2 * _stageDy,
+      ),
+    );
+    dws.add(d);
+  }
+  for (var i = 1; i < dws.length; i++) {
+    wire(dws[i - 1], 'out1', dws[i], 'in1');
+  }
+
+  final aGains = <String>[];
+  for (var i = 0; i < n; i++) {
+    final g = nextId('g');
+    elements.add(
+      gain.instantiate(
+        instanceId: g,
+        x: x + (i + 2) * _stageDx,
+        y: y + 4 * _stageDy,
+        params: {'gain': a[i]},
+        label: 'a${i + 1}',
+      ),
+    );
+    wire(dws[i], 'out1', g, 'in1');
+    aGains.add(g);
+  }
+
+  var wAcc = tapX;
+  var wAccPort = 'out1';
+  for (var i = 0; i < n; i++) {
+    final add = nextId('add');
+    elements.add(
+      adder.instantiate(
+        instanceId: add,
+        x: x + (i + 1) * _stageDx,
+        y: y + 3 * _stageDy,
+        params: {
+          'signs': ['+', '-'],
+        },
+      ),
+    );
+    wire(wAcc, wAccPort, add, 'in1');
+    wire(aGains[i], 'out1', add, 'in2');
+    wAcc = add;
+    wAccPort = 'out1';
+  }
+  wire(wAcc, wAccPort, dws[0], 'in1');
+
+  // Feedforward: b[0]*w[n] + b[1]*w[n-1] + ... + b[N]*w[n-N] — reads
+  // straight off the same delay line just built, no second delay chain.
+  final bGains = <String>[];
+  final firstBGain = nextId('g');
+  elements.add(
+    gain.instantiate(
+      instanceId: firstBGain,
+      x: x + (n + 2) * _stageDx,
+      y: y,
+      params: {'gain': b[0]},
+      label: 'b0',
+    ),
+  );
+  wire(wAcc, wAccPort, firstBGain, 'in1');
+  bGains.add(firstBGain);
+  for (var i = 0; i < n; i++) {
+    final g = nextId('g');
+    elements.add(
+      gain.instantiate(
+        instanceId: g,
+        x: x + (i + 2) * _stageDx,
+        y: y,
+        params: {'gain': b[i + 1]},
+        label: 'b${i + 1}',
+      ),
+    );
+    wire(dws[i], 'out1', g, 'in1');
+    bGains.add(g);
+  }
+
+  var outAcc = bGains[0];
+  var outAccPort = 'out1';
+  for (var i = 1; i < bGains.length; i++) {
+    final add = nextId('add');
+    elements.add(
+      adder.instantiate(
+        instanceId: add,
+        x: x + (n + 2 + i) * _stageDx,
+        y: y + _stageDy,
+      ),
+    );
+    wire(outAcc, outAccPort, add, 'in1');
+    wire(bGains[i], 'out1', add, 'in2');
+    outAcc = add;
+    outAccPort = 'out1';
+  }
+
+  return FilterStructure(
+    elements: elements,
+    inputBlockId: tapX,
+    inputPortId: 'in1',
+    outputBlockId: outAcc,
+    outputPortId: outAccPort,
   );
 }
 

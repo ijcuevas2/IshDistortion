@@ -79,6 +79,315 @@ void main() {
     });
   });
 
+  group('buildFirTransposedDirectForm', () {
+    test('produces a graph with no algebraic loop', () {
+      final structure = buildFirTransposedDirectForm(
+        idPrefix: 'firt',
+        coefficients: [1, 0.5, -0.25, 0.1],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      expect(detectAlgebraicLoops(SignalGraph.fromDocument(doc)), isEmpty);
+    });
+
+    test('H(z) is exactly the weighted sum of z^-i, for coefficient counts 1 through 5', () {
+      for (final coefficients in [
+        [3.0],
+        [1.0, 0.5],
+        [1.0, 0.5, -0.25],
+        [0.2, 0.4, 0.4, 0.2],
+        [1.0, -2.0, 3.0, -2.0, 1.0],
+      ]) {
+        final structure = buildFirTransposedDirectForm(
+          idPrefix: 'firt',
+          coefficients: coefficients,
+        );
+        final doc = _wrapWithSourceSink(structure);
+        final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+        num expected(num z) {
+          var sum = 0.0;
+          for (var i = 0; i < coefficients.length; i++) {
+            sum += coefficients[i] * _powInv(z, i);
+          }
+          return sum;
+        }
+
+        for (final z in [2.0, 5.0, -3.0, 0.5]) {
+          expect(
+            result.h.evaluate({}, z: z),
+            closeTo(expected(z), 1e-9),
+            reason: 'coefficients=$coefficients z=$z',
+          );
+        }
+      }
+    });
+
+    test('matches buildFirDirectForm exactly, for the same coefficients '
+        '(same H(z), different topology)', () {
+      const coefficients = [0.3, -0.6, 0.9, 0.1];
+      final transposed = buildFirTransposedDirectForm(
+        idPrefix: 'a',
+        coefficients: coefficients,
+      );
+      final direct = buildFirDirectForm(
+        idPrefix: 'b',
+        coefficients: coefficients,
+      );
+      final transposedResult = computeTransferFunction(
+        SignalGraph.fromDocument(_wrapWithSourceSink(transposed)),
+      )!;
+      final directResult = computeTransferFunction(
+        SignalGraph.fromDocument(_wrapWithSourceSink(direct)),
+      )!;
+
+      for (final z in [2.0, -1.5, 4.0]) {
+        expect(
+          transposedResult.h.evaluate({}, z: z),
+          closeTo(directResult.h.evaluate({}, z: z), 1e-9),
+        );
+      }
+    });
+
+    test('rejects an empty coefficient list', () {
+      expect(
+        () => buildFirTransposedDirectForm(idPrefix: 'x', coefficients: []),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('buildFirLattice', () {
+    test('produces a graph with no algebraic loop', () {
+      final structure = buildFirLattice(
+        idPrefix: 'lat',
+        reflectionCoefficients: [0.5, -0.3, 0.2],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      expect(detectAlgebraicLoops(SignalGraph.fromDocument(doc)), isEmpty);
+    });
+
+    test('a single stage realizes H(z) = 1 + k1*z^-1', () {
+      const k1 = 0.4;
+      final structure = buildFirLattice(
+        idPrefix: 'lat',
+        reflectionCoefficients: [k1],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      for (final z in [2.0, 5.0, -3.0, 0.5]) {
+        final expected = 1 + k1 * _powInv(z, 1);
+        expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+      }
+    });
+
+    test('two stages realize H(z) = 1 + k1*(1+k2)*z^-1 + k2*z^-2 '
+        '(the textbook direct-form-equivalent of a 2nd-order lattice)', () {
+      const k1 = 0.4, k2 = -0.25;
+      final structure = buildFirLattice(
+        idPrefix: 'lat',
+        reflectionCoefficients: [k1, k2],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      for (final z in [2.0, 5.0, -3.0, 0.5]) {
+        final zInv = _powInv(z, 1);
+        final expected = 1 + k1 * (1 + k2) * zInv + k2 * zInv * zInv;
+        expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+      }
+    });
+
+    test(
+      'three stages match the hand-derived cubic direct-form equivalent',
+      () {
+        const k1 = 0.4, k2 = -0.25, k3 = 0.1;
+        final structure = buildFirLattice(
+          idPrefix: 'lat',
+          reflectionCoefficients: [k1, k2, k3],
+        );
+        final doc = _wrapWithSourceSink(structure);
+        final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+        // Derived independently (via the z-domain recursion a_m = a_{m-1} +
+        // k_m*z^-1*b_{m-1}, b_m = k_m*a_{m-1} + z^-1*b_{m-1}, a_0=b_0=1),
+        // not by re-running the generator's own stage-by-stage code.
+        const c0 = 1.0;
+        const c1 = k1 * (1 + k2) + k2 * k3;
+        const c2 = k2 + k1 * k3 * (1 + k2);
+        const c3 = k3;
+
+        for (final z in [2.0, 5.0, -3.0, 0.5]) {
+          final zInv = _powInv(z, 1);
+          final expected =
+              c0 + c1 * zInv + c2 * zInv * zInv + c3 * zInv * zInv * zInv;
+          expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+        }
+      },
+    );
+
+    test('rejects an empty reflection-coefficient list', () {
+      expect(
+        () => buildFirLattice(idPrefix: 'x', reflectionCoefficients: []),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('buildIirDirectFormI', () {
+    test('produces a graph with no algebraic loop', () {
+      final structure = buildIirDirectFormI(
+        idPrefix: 'df1',
+        b: [1.0, 0.5, 0.2],
+        a: [-0.6, 0.1],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      expect(detectAlgebraicLoops(SignalGraph.fromDocument(doc)), isEmpty);
+    });
+
+    test('matches the textbook H(z) for a simple 1st-order case', () {
+      const b0 = 1.0, b1 = 0.4, a1 = -0.5;
+      final structure = buildIirDirectFormI(
+        idPrefix: 'df1',
+        b: [b0, b1],
+        a: [a1],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      // Not 0.5: with a1=-0.5, that's exactly this H(z)'s pole
+      // (1 + a1*z^-1 = 0 at z = -a1 = 0.5) — both sides would evaluate
+      // to (the same, but closeTo-incomparable) infinity there.
+      for (final z in [2.0, 5.0, -3.0, -2.0]) {
+        final zInv = _powInv(z, 1);
+        final expected = (b0 + b1 * zInv) / (1 + a1 * zInv);
+        expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+      }
+    });
+
+    test('matches buildBiquadDf2t exactly for the same coefficients '
+        '(same H(z), non-minimal-delay topology)', () {
+      const b0 = 1.0, b1 = 0.6, b2 = -0.2, a1 = -0.7, a2 = 0.15;
+      final df1 = buildIirDirectFormI(
+        idPrefix: 'df1',
+        b: [b0, b1, b2],
+        a: [a1, a2],
+      );
+      final df2t = buildBiquadDf2t(
+        idPrefix: 'df2t',
+        b0: b0,
+        b1: b1,
+        b2: b2,
+        a1: a1,
+        a2: a2,
+      );
+      final df1Result = computeTransferFunction(
+        SignalGraph.fromDocument(_wrapWithSourceSink(df1)),
+      )!;
+      final df2tResult = computeTransferFunction(
+        SignalGraph.fromDocument(_wrapWithSourceSink(df2t)),
+      )!;
+
+      for (final z in [2.0, 0.5, 10.0, -4.0]) {
+        expect(
+          df1Result.h.evaluate({}, z: z),
+          closeTo(df2tResult.h.evaluate({}, z: z), 1e-9),
+        );
+      }
+    });
+
+    test('rejects an empty b list', () {
+      expect(
+        () => buildIirDirectFormI(idPrefix: 'x', b: [], a: [0.5]),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects an empty a list', () {
+      expect(
+        () => buildIirDirectFormI(idPrefix: 'x', b: [1.0], a: []),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('buildIirDirectFormII', () {
+    test('produces a graph with no algebraic loop', () {
+      final structure = buildIirDirectFormII(
+        idPrefix: 'df2',
+        b: [1.0, 0.5, 0.2],
+        a: [-0.6, 0.1],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      expect(detectAlgebraicLoops(SignalGraph.fromDocument(doc)), isEmpty);
+    });
+
+    test('matches the textbook H(z) for a simple 1st-order case', () {
+      const b0 = 1.0, b1 = 0.4, a1 = -0.5;
+      final structure = buildIirDirectFormII(
+        idPrefix: 'df2',
+        b: [b0, b1],
+        a: [a1],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      // Not 0.5: with a1=-0.5, that's exactly this H(z)'s pole
+      // (1 + a1*z^-1 = 0 at z = -a1 = 0.5) — both sides would evaluate
+      // to (the same, but closeTo-incomparable) infinity there.
+      for (final z in [2.0, 5.0, -3.0, -2.0]) {
+        final zInv = _powInv(z, 1);
+        final expected = (b0 + b1 * zInv) / (1 + a1 * zInv);
+        expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+      }
+    });
+
+    test('matches buildBiquadDf2t exactly for the same coefficients '
+        '(same H(z), minimal-delay topology)', () {
+      const b0 = 1.0, b1 = 0.6, b2 = -0.2, a1 = -0.7, a2 = 0.15;
+      final df2 = buildIirDirectFormII(
+        idPrefix: 'df2',
+        b: [b0, b1, b2],
+        a: [a1, a2],
+      );
+      final df2t = buildBiquadDf2t(
+        idPrefix: 'df2t',
+        b0: b0,
+        b1: b1,
+        b2: b2,
+        a1: a1,
+        a2: a2,
+      );
+      final df2Result = computeTransferFunction(
+        SignalGraph.fromDocument(_wrapWithSourceSink(df2)),
+      )!;
+      final df2tResult = computeTransferFunction(
+        SignalGraph.fromDocument(_wrapWithSourceSink(df2t)),
+      )!;
+
+      for (final z in [2.0, 0.5, 10.0, -4.0]) {
+        expect(
+          df2Result.h.evaluate({}, z: z),
+          closeTo(df2tResult.h.evaluate({}, z: z), 1e-9),
+        );
+      }
+    });
+
+    test('rejects an empty a list', () {
+      expect(
+        () => buildIirDirectFormII(idPrefix: 'x', b: [1.0], a: []),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects a b/a length mismatch', () {
+      expect(
+        () => buildIirDirectFormII(idPrefix: 'x', b: [1.0, 0.5], a: [0.1, 0.2]),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('buildBiquadDf2t', () {
     test('produces a graph with no algebraic loop', () {
       final structure = buildBiquadDf2t(

@@ -80,10 +80,12 @@ Built and verified so far (each gate below is green — see "Build & test"):
   output is verified against `sd_graph`'s Mason engine: FIR against
   `Σcᵢ·z⁻ⁱ`, the biquad against the textbook DF2T `H(z)`, and the cascade
   against the product of its sections' individual `H(z)` — for several
-  coefficient sets and evaluation points each. Not implemented: §5.7
-  (comms/modulation), §5.8 (adaptive/statistical), §5.11 (analysis-plot
-  objects), and the rest of §5.5 (lattice/parallel/wave-digital/comb/CIC,
-  state-space). 33 new tests.
+  coefficient sets and evaluation points each. Not implemented at the
+  time: §5.7 (comms/modulation), §5.8 (adaptive/statistical), §5.11
+  (analysis-plot objects — all four landed in later checkpoints; see
+  above), and the rest of §5.5 (transposed FIR and lattice landed
+  later too, see below; parallel/wave-digital/comb/CIC/state-space
+  remain unbuilt). 33 new tests.
 - **Phase 10 (partial) — TikZ export.** `packages/sd_export`:
   `exportToTikz` walks the semantic graph (`sd_graph`) and emits
   standard-TikZ source (not the rarely-installed `tikz-dsp` package) —
@@ -536,9 +538,38 @@ Built and verified so far (each gate below is green — see "Build & test"):
   zero, Bode, Nyquist, spectrogram) now has every plot it names built.
   18 new `sd_graph` tests, 10 new `sd_render` tests, 5 new `sd_ui`
   tests, 1 new app test.
+- **Phase 7 — four more §5.5 filter structures.** `sd_stencils` gained
+  `buildFirTransposedDirectForm`, `buildFirLattice`,
+  `buildIirDirectFormI`, and `buildIirDirectFormII`, alongside the
+  three from the bullet above. `buildFirTransposedDirectForm` realizes
+  the *same* `H(z)` as `buildFirDirectForm` via the network-
+  transposition theorem's dual topology (no delay chain on the input;
+  delays sit on the running-sum edges instead) — verified both by hand
+  derivation and by a direct cross-check against `buildFirDirectForm`'s
+  own already-verified `H(z)`, for identical coefficients.
+  `buildFirLattice` takes the lattice structure's own native parameters
+  (reflection coefficients `k_1..k_p`, not direct-form `b_i`s) and is
+  verified against the closed-form direct-form-equivalent coefficients
+  hand-derived from the lattice's z-domain recursion for `p`=1, 2, and
+  3 (e.g. `p=2`: `c0=1, c1=k1(1+k2), c2=k2`) — an independent derivation,
+  not a re-run of the generator's own stage-by-stage code.
+  `buildIirDirectFormI`/`buildIirDirectFormII` generalize
+  `buildBiquadDf2t` (fixed at order 2) to arbitrary order, and are both
+  cross-checked against `buildBiquadDf2t` directly for matching
+  coefficients (same `H(z)`, different — and differently-costly —
+  topologies; see the "Architecture decisions" bullet below on what
+  actually differs between DF-I/DF-II/DF2T). One real test bug found
+  and fixed along the way (not an implementation bug): an early version
+  of the DF-I/DF-II "1st-order case" tests evaluated `H(z)` at a `z`
+  that landed exactly on that `H(z)`'s own pole, comparing infinity to
+  infinity — `closeTo` correctly refuses to call that "close" (the
+  difference is `NaN`), so the fix was picking a different sample
+  point, not the implementation. 19 new `sd_stencils` tests.
 
 **Next, if this continues**: the 5 native pen plugins (6/7) and print
-export (10) are all **not started**, and §5.5/§5.7/§5.8 remain thin.
+export (10) are all **not started**; §5.5's parallel/wave-digital/comb/
+CIC/coupled-lattice/state-space forms, §5.7, and §5.8 remain thin/
+unstarted.
 Given the true scope of §0-§15 (a
 production, cross-platform, multi-native-plugin app), these were not
 attempted in the interest of not shipping shallow/fake versions of
@@ -575,8 +606,9 @@ faked. Concretely still missing:
   even if written, and Linux's own pen support (§7: libinput/XInput2/
   Wayland tablet_v2) is a real native-code undertaking on its own.
 - **The rest of §5.5/§5.7/§5.8 (Phase 7); §5.11 is now fully done.**
-  §5.5's FIR/biquad/cascade are generated (see above) but lattice/
-  parallel/wave-digital/comb/CIC/state-space forms aren't; §5.7 (comms/
+  §5.5's FIR direct/transposed-direct/lattice, biquad DF2T/DF-I/DF-II,
+  and biquad cascade are all generated (see above), but parallel/wave-
+  digital/comb/CIC/coupled-lattice/state-space forms aren't; §5.7 (comms/
   modulation — mixer, NCO, PLL, Costas loop, ...) and §5.8 (adaptive/
   statistical — LMS/RLS, ...) are entirely unimplemented. §5.11's
   "Analysis Plot" section (pole-zero, Bode, Nyquist, and now
@@ -617,7 +649,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
 /packages/sd_graph         # ✅ Phase 4+8+5.11 (done) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram
-/packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR/biquad/cascade generators
+/packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR (direct/transposed/lattice) + IIR (DF-I/II/DF2T/cascade) generators
 /packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, done) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
@@ -1020,6 +1052,30 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   directly for its own dB-range-with-padding-and-cap logic rather than
   a second near-identical implementation, the same `svgUnitsPerCm`-style
   sharing as the bullet above.
+- **`buildFirTransposedDirectForm` is built via the network-
+  transposition theorem, not by independently re-deriving a topology
+  that happens to match.** Transposing a signal-flow graph — reverse
+  every edge, swap the input/output roles, and swap each pickoff
+  (fan-out) node for a summing junction and vice versa — is a standard
+  result: it always preserves the transfer function. Applying it to
+  `buildFirDirectForm`'s own graph (one pickoff fanning into a tapped
+  delay line, multiplied and summed) mechanically produces the
+  transposed form's actual shape (one pickoff, no delay chain on the
+  input; delays on the running-sum edges instead) — which is also
+  *why* the two are guaranteed to share `H(z)`, not merely observed to
+  by testing. `buildIirDirectFormI` and `buildIirDirectFormII` make
+  the *cost* difference between "Direct Form I" and "Direct Form II"
+  concrete rather than just naming it: DF-I keeps two separate delay
+  chains (one `M`-long for the numerator's `x` taps, one `N`-long for
+  the denominator's fed-back `y` taps — `M+N` delays total), while
+  DF-II computes one intermediate signal `w[n] = x[n] - Σaᵢw[n-i]`
+  and reads *both* the feedback and the feedforward taps off that
+  same `max(M,N)`-long delay line — the "canonical"/minimal-delay
+  property DF-II is specifically named for. `buildBiquadDf2t` (already
+  built) is the *transposed* DF-II, a third distinct topology again —
+  all three, for matching coefficients, are cross-checked to produce
+  the identical `H(z)` despite realizing it with different numbers and
+  arrangements of delays, gains, and adders.
 
 ## Build & test
 
