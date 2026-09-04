@@ -63,9 +63,9 @@ Built and verified so far (each gate below is green — see "Build & test"):
   readout, both wired into the app. 45 + 21 tests (7 new in `sd_ui`, 3 in
   `sd_render` for connector creation).
   Not implemented: hierarchical/subsystem blocks (flagged via
-  `Block.isSubsystem`, not built), pole-zero generation, and treating a
-  multirate block as anything but unity gain in H(z) — all documented in
-  code comments at the point they matter.
+  `Block.isSubsystem`, not built — pole-zero generation followed later,
+  see below) and treating a multirate block as anything but unity gain
+  in H(z) — both documented in code comments at the point they matter.
 - **Phase 7 (partial) — more of the stencil library.** `sd_stencils`
   gained §5.4 (quantizer/ADC/DAC/saturation/rounding/dither), §5.6
   (FFT/IFFT, bit-reversal, a 2-in/2-out radix-2 butterfly — the first
@@ -212,14 +212,44 @@ Built and verified so far (each gate below is green — see "Build & test"):
   target anyway, and even Linux's own pen support (libinput/XInput2/
   Wayland tablet_v2) is real native-code work on its own — nor
   coalesced/predicted point history or a "Pen status" capability UI.
+- **§5.11 — pole-zero analysis, from the same H(z) the transfer-function
+  panel already computes.** `sd_graph` gained `Complex` (a minimal
+  complex-number type — `dart:math` has none), `findPolynomialRoots`
+  (Durand-Kerner/Weierstrass simultaneous root-finding), and
+  `computePoleZero`, which reads `H(z)` as a ratio of polynomials in
+  `z` (walking the `Expr` tree, substituting any bound parameters) and
+  finds each polynomial's roots. Verified against the biquad DF2T's
+  poles/zeros computed independently by hand via the quadratic formula
+  (matching to `1e-6`) — the same rigor as the Mason's-formula
+  acceptance test itself, not just "a plausible-looking result came
+  out". That verification caught two real bugs before either shipped:
+  a reversed-polynomial mixup in the `z^-1`-to-`z` conversion (an
+  earlier version silently produced the *reciprocal* roots), and an
+  unhandled case where every path from source to sink passes through
+  at least one delay (e.g. a bare `source -> delay -> sink`, `H(z) =
+  z^-1`) — the numerator/denominator's own smallest present power
+  wasn't being factored out, so `findPolynomialRoots` rejected the
+  result outright instead of reporting the single pole at the origin
+  it actually has. `sd_render` gained `PoleZeroPlotPainter` (the unit
+  circle, axes, `x` poles, `o` zeros); `sd_ui`'s new `PoleZeroPanel`
+  wires it to the live document (mirroring `TransferFunctionPanel`'s
+  pattern exactly) and calls out stability explicitly ("every pole
+  strictly inside the unit circle") rather than leaving it to be
+  eyeballed against the circle. A 5th app tab, "Pole-Zero", makes it
+  reachable in the running app. 38 new tests (24 `sd_graph`, 8
+  `sd_render`, 5 `sd_ui`, 1 the app).
+  Not implemented: the rest of §5.11's analysis plots (Bode, Nyquist,
+  spectrogram, ...) and hierarchical/subsystem-aware analysis (the
+  same scope cut Mason's formula itself already documents).
 
 **Next, if this continues**: Ribbon UI (5), the 5 native pen plugins
-(6/7), the rest of vector export — PDF/PNG/EPS/print (10) —, and polish
-(11) are all **not started**, and §5.5/§5.7/§5.8/§5.11 remain thin and
-Phase 9's equation-editor UI is missing (previous bullets). Given the
-true scope of §0-§15 (a production, cross-platform, multi-native-plugin
-app), these were not attempted in the interest of not shipping
-shallow/fake versions of them — see "What's not built" below.
+(6/7), the rest of vector export — PDF/PNG/EPS/print (10) —, the rest
+of §5.11's analysis plots, and polish (11) are all **not started**, and
+§5.5/§5.7/§5.8 remain thin and Phase 9's equation-editor UI is missing
+(previous bullets). Given the true scope of §0-§15 (a production,
+cross-platform, multi-native-plugin app), these were not attempted in
+the interest of not shipping shallow/fake versions of them — see
+"What's not built" below.
 
 `plugins/sd_pen_*` are placeholder READMEs — see each one for what
 it'll need to become.
@@ -248,9 +278,9 @@ faked. Concretely still missing:
 - **The rest of §5.5/§5.7/§5.8/§5.11 (Phase 7).** §5.5's FIR/biquad/
   cascade are generated (see above) but lattice/parallel/wave-digital/
   comb/CIC/state-space forms aren't; §5.7 (comms/modulation — mixer,
-  NCO, PLL, Costas loop, ...), §5.8 (adaptive/statistical — LMS/RLS,
-  ...), and §5.11 (analysis-plot objects — pole-zero, Bode, Nyquist,
-  spectrogram, ...) are entirely unimplemented. None of the filter
+  NCO, PLL, Costas loop, ...) and §5.8 (adaptive/statistical — LMS/RLS,
+  ...) are entirely unimplemented. §5.11's pole-zero plot is done (see
+  above) — Bode, Nyquist, and spectrogram plots aren't. None of the filter
   generators have a palette/drag-to-canvas entry point yet either —
   they're called directly (as the tests do); wiring one into
   `StencilPalette`/`StencilCanvasArea` (which only knows single-block
@@ -280,12 +310,12 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 ```
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
-/packages/sd_graph         # ✅ Phase 4+8 — semantic graph, validation, Tarjan, Mason, rate/netlist
+/packages/sd_graph         # ✅ Phase 4+8+5.11 — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero
 /packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR/biquad/cascade generators
 /packages/sd_render        # ✅ Phase 2 (+connectors) — scene, pan/zoom, selection, port-to-port wiring
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
-/packages/sd_ui            # 🚧 Phase 3+4 (partial) — palette/tree/inspector/problems/H(z); ribbon in 5
+/packages/sd_ui            # 🚧 Phase 3+4 (partial) — palette/tree/inspector/problems/H(z)/pole-zero; ribbon in 5
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
 /packages/sd_export        # ✅ Phase 10 (partial) — TikZ export, pdflatex-verified; PDF/PNG/EPS/print pending
 /packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app

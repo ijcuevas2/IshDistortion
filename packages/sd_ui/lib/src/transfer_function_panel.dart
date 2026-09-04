@@ -9,8 +9,8 @@ import 'document_listenable.dart';
 /// transfer function (Mason)"), recomputed from the document's current
 /// `source`/`sink` blocks whenever it changes. Rendered as real typeset
 /// math (`Expr.toTex()` through `sd_latex`'s [LatexLabel]), not a plain
-/// monospace expression string. Pole-zero generation from this H(z)
-/// (§4/§5.11) is not implemented yet.
+/// monospace expression string. See `PoleZeroPanel` for pole-zero
+/// analysis (§4/§5.11) of this same `H(z)`.
 class TransferFunctionPanel extends StatefulWidget {
   const TransferFunctionPanel({super.key, required this.document});
 

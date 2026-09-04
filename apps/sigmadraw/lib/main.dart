@@ -12,11 +12,12 @@ import 'package:sd_ui/sd_ui.dart';
 /// 2-4 pieces — a [StencilCanvasArea] (drop-to-place, drag-to-connect,
 /// and (§6/§7) draw-ink canvas — the app bar's segmented button switches
 /// [CanvasTool]), a [StencilPalette], and a tabbed [ElementTree] /
-/// [InspectorPanel] / [ProblemsPanel] / [TransferFunctionPanel], sharing
-/// one [SelectionModel] and one [UndoStack] (§2/§12 — every mutation those
-/// pieces make routes through it, undoable via the app bar's buttons or
-/// Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y) — in a plain [Row] layout standing in for
-/// the dockable-panel ribbon shell that Phase 5 will build.
+/// [InspectorPanel] / [ProblemsPanel] / [TransferFunctionPanel] /
+/// [PoleZeroPanel], sharing one [SelectionModel] and one [UndoStack]
+/// (§2/§12 — every mutation those pieces make routes through it, undoable
+/// via the app bar's buttons or Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y) — in a plain
+/// [Row] layout standing in for the dockable-panel ribbon shell that
+/// Phase 5 will build.
 void main() {
   runApp(const SigmaDrawApp());
 }
@@ -166,7 +167,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                 child: Material(
                   elevation: 1,
                   child: DefaultTabController(
-                    length: 4,
+                    length: 5,
                     child: Column(
                       children: [
                         const TabBar(
@@ -176,6 +177,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                             Tab(text: 'Inspector'),
                             Tab(text: 'Problems'),
                             Tab(text: 'H(z)'),
+                            Tab(text: 'Pole-Zero'),
                           ],
                         ),
                         Expanded(
@@ -196,6 +198,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                                 selection: _selection,
                               ),
                               TransferFunctionPanel(document: _document),
+                              PoleZeroPanel(document: _document),
                             ],
                           ),
                         ),

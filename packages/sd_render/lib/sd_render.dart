@@ -13,6 +13,7 @@ export 'src/geometry/svg_path_data.dart';
 export 'src/geometry/svg_shapes.dart';
 export 'src/geometry/svg_transform.dart';
 export 'src/grid_painter.dart';
+export 'src/pole_zero_painter.dart';
 export 'src/scene/hit_test.dart';
 export 'src/scene/scene.dart';
 export 'src/scene/scene_builder.dart';

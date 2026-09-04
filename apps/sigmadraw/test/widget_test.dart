@@ -9,4 +9,18 @@ void main() {
 
     expect(find.text('SigmaDraw'), findsOneWidget);
   });
+
+  testWidgets('the Pole-Zero tab is reachable without error', (tester) async {
+    await tester.pumpWidget(const SigmaDrawApp());
+
+    await tester.tap(find.text('Pole-Zero'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    // "Pole-Zero" appears at least as the tab label itself; not
+    // findsOneWidget since PoleZeroPanel's own in-body heading (present
+    // once its message branch doesn't apply) would be a second match —
+    // this only needs to prove the tab switch didn't crash or go blank.
+    expect(find.text('Pole-Zero'), findsWidgets);
+  });
 }
