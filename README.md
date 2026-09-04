@@ -269,15 +269,44 @@ Built and verified so far (each gate below is green — see "Build & test"):
   Not implemented: reaching the OS clipboard (so paste can't cross
   into/out of another application), and preserving wiring when copying
   more than one connected block at once.
+- **Phase 5 — the Ribbon UI, and Phase 9's missing equation dialog.**
+  `sd_ui` gained a hand-rolled, data-driven `Ribbon` (`RibbonTab` >
+  `RibbonGroup` > `RibbonAction`/`child`) — tabs of titled command
+  clusters, the shape common to Office/WPS/LibreOffice ribbons, built
+  from plain Material widgets rather than any one of them's actual
+  chrome (the brief's own "do not pixel-copy Office ribbon chrome").
+  Replaces the app bar's old plain `Row` of buttons: a **Home** tab
+  with Undo/Redo, Clipboard (Copy/Paste/Delete), Tools (the existing
+  Select/Ink `SegmentedButton`, now living in a group's `child` slot),
+  and a new **Zoom** group (`SigmaCanvasState.zoomByFactor`/
+  `fitToContentAuto`, reached through `StencilCanvasArea`'s
+  `canvasKey`); an **Insert** tab with an **Equation** action opening
+  the new `InsertLatexDialog` — the UI entry point Phase 9's own doc
+  comment had flagged as the one missing piece of the LaTeX pipeline.
+  The dialog shows a live preview via the fast on-screen `LatexLabel`
+  path while typing, then on Insert runs the real `pdflatex`+`dvisvgm`
+  toolchain (through an injectable `LatexRenderCache`, so tests don't
+  each spawn a real LaTeX process) and splices the result in as one
+  undoable step — see the `positionLatexEmbed` architecture note below
+  for how that's made undoable without changing `embedLatex`'s own
+  contract. Existing icon-based widget-test finders
+  (`find.widgetWithIcon(IconButton, Icons.undo)` etc.) needed no
+  changes: every `RibbonAction` still renders as a real `IconButton`
+  with the same icon, just re-parented into the ribbon. 22 new tests
+  (5 `sd_render` — the zoom controls — 12 `sd_ui`, and the app's
+  existing suite re-verified green against the new shell). Not
+  implemented: a Stencils flyout on the Insert tab — deliberately
+  skipped since the always-visible palette sidebar already covers
+  drag-to-place discovery and a flyout would only duplicate it — and
+  docking/undocking panels (still a fixed three-pane layout).
 
-**Next, if this continues**: Ribbon UI (5), the 5 native pen plugins
-(6/7), the rest of vector export — PDF/PNG/EPS/print (10) —, the rest
-of §5.11's analysis plots, and polish (11) are all **not started**, and
-§5.5/§5.7/§5.8 remain thin and Phase 9's equation-editor UI is missing
-(previous bullets). Given the true scope of §0-§15 (a production,
-cross-platform, multi-native-plugin app), these were not attempted in
-the interest of not shipping shallow/fake versions of them — see
-"What's not built" below.
+**Next, if this continues**: the 5 native pen plugins (6/7), the rest
+of vector export — PDF/PNG/EPS/print (10) —, the rest of §5.11's
+analysis plots, and polish (11) are all **not started**, and
+§5.5/§5.7/§5.8 remain thin. Given the true scope of §0-§15 (a
+production, cross-platform, multi-native-plugin app), these were not
+attempted in the interest of not shipping shallow/fake versions of
+them — see "What's not built" below.
 
 `plugins/sd_pen_*` are placeholder READMEs — see each one for what
 it'll need to become.
@@ -292,8 +321,13 @@ team, not one sitting. What exists now is a solid, fully-tested
 see it validated, see its transfer function — all for real, nothing
 faked. Concretely still missing:
 
-- **Ribbon UI (§10, Phase 5).** The app is a plain `Row` of panels, not
-  the tabbed/contextual ribbon with galleries and dialog launchers.
+- **The rest of the Ribbon/docking UI (§10, Phase 5).** A real tabbed
+  `Ribbon` (Home/Insert, see above) now drives Undo/Redo/Clipboard/
+  Tools/Zoom and the equation dialog — what's still missing is a
+  gallery-style stencil picker on the ribbon itself (the sidebar
+  palette covers this today), more tabs as more features need ribbon
+  entry points, and any panel docking/undocking (still a fixed
+  three-pane layout, not floatable/rearrangeable).
 - **All 5 native pen plugins (§6-§7, Phase 6).** The stroke model,
   pressure/speed pipeline, outline geometry, device classification, and
   palm rejection all exist and are wired into a real (if minimal) draw
@@ -315,11 +349,11 @@ faked. Concretely still missing:
   `StencilDefinition`s, not multi-element `FilterStructure`s) is
   unstarted UI work.
 - **The rest of LaTeX (§11, Phase 9).** Both rendering paths exist and
-  are wired into the H(z) panel (see above) — what's missing is UI to
-  *author* a standalone equation with them: an equation-editor dialog/
-  launcher (§10's Insert ribbon item), and the built-in DSP label
-  helpers (gain-coefficient-on-triangle, `x[n]`/`y[n]`-on-edge, ...)
-  beyond what a stencil already renders itself.
+  are wired into the H(z) panel, and the Insert ribbon's `Equation`
+  action now covers authoring a standalone equation (see above) — what
+  remains is the built-in DSP label helpers (gain-coefficient-on-
+  triangle, `x[n]`/`y[n]`-on-edge, ...) beyond what a stencil already
+  renders itself, and the optional experimental WASM-TeX fallback.
 - **The rest of vector export (§11, Phase 10): PDF, PNG@DPI, EPS/PS, and
   print dialogs.** TikZ export is done (see above) and Phase 1's SVG
   native/plain export already existed; a real, standard-TikZ,
@@ -343,7 +377,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_render        # ✅ Phase 2 (+connectors) — scene, pan/zoom, selection, port-to-port wiring
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
-/packages/sd_ui            # 🚧 Phase 3+4 (partial) — palette/tree/inspector/problems/H(z)/pole-zero; ribbon in 5
+/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert), equation dialog, palette/tree/inspector/problems/H(z)/pole-zero
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
 /packages/sd_export        # ✅ Phase 10 (partial) — TikZ export, pdflatex-verified; PDF/PNG/EPS/print pending
 /packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app
@@ -486,12 +520,13 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 - **The ink tool is gated by a new two-value `CanvasTool` enum
   (`select`/`ink`) on `SigmaCanvas`, rather than, say, a boolean flag or
   overloading the existing pointer-down hit-testing.** §10's real tool
-  selector (a ribbon button group) doesn't exist yet, but *something*
+  selector (now a ribbon button group, in a `RibbonGroup.child` slot —
+  see below) didn't exist yet when this was written, but *something*
   has to tell `SigmaCanvas` "every gesture is a stroke now, regardless
   of what's underneath the pointer" — a boolean would've worked
-  equally well for two tools, but naming it as an enum now means adding
-  a third tool later (once the ribbon exists) touches one `switch`, not
-  a second boolean flag interacting with the first.
+  equally well for two tools, but naming it as an enum meant adding a
+  third tool later touches one `switch`, not a second boolean flag
+  interacting with the first.
 - **`SigmaCanvas`'s drag state gained a `_dragPointer` id guard —
   discovered necessary, not designed in from the start.** Wiring
   `sd_input` in for real (rather than only unit-testing it in
@@ -509,6 +544,48 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   rather than preempting it, unlike the reverse (and much more
   realistic — a hovering stylus is normally sensed before the hand's
   palm makes contact) ordering, which does work correctly.
+- **`Ribbon` is a hand-rolled `Column`-of-`Row`s over plain Material
+  widgets, not the `fluent_ui` package.** `fluent_ui` would get closer
+  to real Office/WPS chrome for free, but it's a large, opinionated
+  Fluent-Design widget set (its own theming, its own button/nav
+  primitives) — adopting it under time pressure risks spending the
+  effort learning/fighting its API rather than shipping the actual
+  Home/Insert functionality, and the brief itself asks *not* to
+  pixel-copy Office's chrome, which is `fluent_ui`'s whole point. A
+  small data model (`RibbonTab`/`RibbonGroup`/`RibbonAction`) plus a
+  ~150-line stateful widget was enough to get tabs, titled groups, and
+  icon-over-label buttons — the load-bearing *shape*, not the skin.
+- **`Ribbon` is purely data-driven (`List<RibbonTab>` in, nothing else)
+  — reactive enabled-state is the caller's job, via whatever
+  `Listenable`s a given action's `onPressed` actually depends on.**
+  The alternative (`Ribbon` taking live model references and computing
+  "is Undo enabled" itself) would couple a generic, reusable shell to
+  this app's specific models (`UndoStack`, `SelectionModel`, ...). The
+  app shell instead wraps its one `Ribbon(tabs: ...)` construction in a
+  single `ListenableBuilder` over `Listenable.merge([_documentListenable,
+  _selection])`, rebuilding the whole (cheap, POD) tab/group/action
+  list fresh on every relevant change — replacing what used to be a
+  separate `ListenableBuilder` per app-bar button.
+- **`InsertLatexDialog` doesn't call `embedLatex` — it calls the new,
+  narrower `positionLatexEmbed` and inserts the result itself.**
+  `embedLatex` does two things in one non-undoable step: merge the
+  compiled equation's glyph-outline `<defs>` into the document, and
+  append the visible content. Only the second needs to be an undo
+  boundary — an undone insert leaving an unreferenced glyph `<path>`
+  behind in `<defs>` is inert (never painted, never round-tripped
+  away), the same bookkeeping-vs-content split `sd_stencils`'
+  `ensureArrowMarker` already relies on. `positionLatexEmbed` is a
+  refactor, not a new code path — `embedLatex` itself now just calls it
+  and appends, so its existing tests/contract are unchanged (re-run
+  green) while the dialog gets the finer-grained seam it needs for
+  `InsertChildCommand`.
+- **The Insert-ribbon's Equation action has no accompanying Stencils
+  flyout.** The brief's own §10 groups "Stencils" and an equation
+  launcher together under Insert; the always-visible sidebar
+  `StencilPalette` already covers drag-to-place discovery, so a flyout
+  duplicating it would add UI surface (and tests) without adding
+  capability — a deliberate scope trim, not an oversight, revisited
+  only if docking later makes the sidebar itself optional/hideable.
 
 ## Build & test
 

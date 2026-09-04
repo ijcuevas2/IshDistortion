@@ -10,16 +10,15 @@ import 'package:sd_ui/sd_ui.dart';
 ///
 /// This is still an early scaffold: [SigmaDrawHome] wires up real Phase
 /// 2-4 pieces — a [StencilCanvasArea] (drop-to-place, drag-to-connect,
-/// and (§6/§7) draw-ink canvas — the app bar's segmented button switches
-/// [CanvasTool]), a [StencilPalette], and a tabbed [ElementTree] /
-/// [InspectorPanel] / [ProblemsPanel] / [TransferFunctionPanel] /
-/// [PoleZeroPanel], sharing one [SelectionModel] and one [UndoStack]
-/// (§2/§12 — every mutation those pieces make routes through it, undoable
-/// via the app bar's buttons or Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y). The app bar
-/// also gained §10's Home-tab "Clipboard" group in miniature — Copy/
-/// Paste/Delete buttons and Ctrl+C/Ctrl+V/Delete/Backspace, all routed
-/// through the same [UndoStack] — in a plain [Row] layout standing in
-/// for the dockable-panel ribbon shell that Phase 5 will build.
+/// and (§6/§7) draw-ink canvas), a [StencilPalette], and a tabbed
+/// [ElementTree] / [InspectorPanel] / [ProblemsPanel] /
+/// [TransferFunctionPanel] / [PoleZeroPanel], sharing one [SelectionModel]
+/// and one [UndoStack] (§2/§12 — every mutation those pieces make routes
+/// through it, undoable via the ribbon's buttons or
+/// Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y). §5's [Ribbon] (Phase 5) is the real
+/// dockable-panel ribbon shell: a Home tab (Clipboard/Undo/Tools/Zoom)
+/// and an Insert tab ([InsertLatexDialog] — the UI entry point Phase 9's
+/// `sd_latex` compile pipeline had been missing).
 void main() {
   runApp(const SigmaDrawApp());
 }
@@ -51,11 +50,12 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
   final _selection = SelectionModel();
   final _undoStack = UndoStack();
   final _clipboard = SdClipboard();
+  final _canvasKey = GlobalKey<SigmaCanvasState>();
   late final SdDocument _document;
   late final DocumentListenable _documentListenable;
 
-  /// §10's Home-tab tool selector, stood in for by the app bar's
-  /// segmented button below until the real ribbon (Phase 5) exists.
+  /// §10's Home-tab tool selector, driven by the ribbon's Tools group
+  /// below.
   CanvasTool _tool = CanvasTool.select;
 
   @override
@@ -109,6 +109,133 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
     );
   }
 
+  void _zoomIn() => _canvasKey.currentState?.zoomByFactor(1.25);
+
+  void _zoomOut() => _canvasKey.currentState?.zoomByFactor(0.8);
+
+  void _zoomToFit() => _canvasKey.currentState?.fitToContentAuto();
+
+  Future<void> _insertEquation() => showDialog<void>(
+    context: context,
+    builder: (_) => InsertLatexDialog(
+      document: _document,
+      undoStack: _undoStack,
+      selection: _selection,
+    ),
+  );
+
+  /// The ribbon's Home tab: Clipboard/Undo/Tools/Zoom groups. Rebuilt from
+  /// inside a [ListenableBuilder] merging every model an action's enabled
+  /// state depends on, so e.g. "Undo" reads disabled the instant
+  /// [UndoStack.canUndo] goes false — the same reactive pattern the old
+  /// per-button [ListenableBuilder]s used, just centralized once here
+  /// since [Ribbon] itself is plain data.
+  RibbonTab _homeTab() => RibbonTab(
+    title: 'Home',
+    groups: [
+      RibbonGroup(
+        title: 'Undo',
+        actions: [
+          RibbonAction(
+            icon: Icons.undo,
+            label: 'Undo',
+            tooltip: _undoStack.canUndo
+                ? 'Undo ${_undoStack.undoDescription}'
+                : 'Undo',
+            onPressed: _undoStack.canUndo ? _undo : null,
+          ),
+          RibbonAction(
+            icon: Icons.redo,
+            label: 'Redo',
+            tooltip: _undoStack.canRedo
+                ? 'Redo ${_undoStack.redoDescription}'
+                : 'Redo',
+            onPressed: _undoStack.canRedo ? _redo : null,
+          ),
+        ],
+      ),
+      RibbonGroup(
+        title: 'Clipboard',
+        actions: [
+          RibbonAction(
+            icon: Icons.content_copy,
+            label: 'Copy',
+            onPressed: _selection.isEmpty ? null : _copy,
+          ),
+          RibbonAction(
+            icon: Icons.content_paste,
+            label: 'Paste',
+            onPressed: _paste,
+          ),
+          RibbonAction(
+            icon: Icons.delete_outline,
+            label: 'Delete',
+            onPressed: _selection.isEmpty ? null : _delete,
+          ),
+        ],
+      ),
+      RibbonGroup(
+        title: 'Tools',
+        child: SegmentedButton<CanvasTool>(
+          segments: const [
+            ButtonSegment(
+              value: CanvasTool.select,
+              icon: Icon(Icons.near_me),
+              tooltip: 'Select',
+            ),
+            ButtonSegment(
+              value: CanvasTool.ink,
+              icon: Icon(Icons.draw),
+              tooltip: 'Ink',
+            ),
+          ],
+          selected: {_tool},
+          showSelectedIcon: false,
+          onSelectionChanged: (selection) =>
+              setState(() => _tool = selection.single),
+        ),
+      ),
+      RibbonGroup(
+        title: 'Zoom',
+        actions: [
+          RibbonAction(
+            icon: Icons.zoom_in,
+            label: 'Zoom In',
+            onPressed: _zoomIn,
+          ),
+          RibbonAction(
+            icon: Icons.zoom_out,
+            label: 'Zoom Out',
+            onPressed: _zoomOut,
+          ),
+          RibbonAction(
+            icon: Icons.fit_screen,
+            label: 'Fit',
+            tooltip: 'Zoom to fit',
+            onPressed: _zoomToFit,
+          ),
+        ],
+      ),
+    ],
+  );
+
+  RibbonTab _insertTab() => RibbonTab(
+    title: 'Insert',
+    groups: [
+      RibbonGroup(
+        title: 'Equation',
+        actions: [
+          RibbonAction(
+            icon: Icons.functions,
+            label: 'Equation',
+            tooltip: 'Insert a LaTeX equation',
+            onPressed: _insertEquation,
+          ),
+        ],
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     return CallbackShortcuts(
@@ -128,133 +255,79 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
       child: Focus(
         autofocus: true,
         child: Scaffold(
-          appBar: AppBar(
-            title: const Text('SigmaDraw'),
-            actions: [
-              SegmentedButton<CanvasTool>(
-                segments: const [
-                  ButtonSegment(
-                    value: CanvasTool.select,
-                    icon: Icon(Icons.near_me),
-                    tooltip: 'Select',
-                  ),
-                  ButtonSegment(
-                    value: CanvasTool.ink,
-                    icon: Icon(Icons.draw),
-                    tooltip: 'Ink',
-                  ),
-                ],
-                selected: {_tool},
-                showSelectedIcon: false,
-                onSelectionChanged: (selection) =>
-                    setState(() => _tool = selection.single),
-              ),
-              const SizedBox(width: 8),
-              ListenableBuilder(
-                listenable: _documentListenable,
-                builder: (context, _) => IconButton(
-                  icon: const Icon(Icons.undo),
-                  tooltip: _undoStack.canUndo
-                      ? 'Undo ${_undoStack.undoDescription}'
-                      : 'Undo',
-                  onPressed: _undoStack.canUndo ? _undo : null,
-                ),
-              ),
-              ListenableBuilder(
-                listenable: _documentListenable,
-                builder: (context, _) => IconButton(
-                  icon: const Icon(Icons.redo),
-                  tooltip: _undoStack.canRedo
-                      ? 'Redo ${_undoStack.redoDescription}'
-                      : 'Redo',
-                  onPressed: _undoStack.canRedo ? _redo : null,
-                ),
-              ),
-              const SizedBox(width: 8),
-              ListenableBuilder(
-                listenable: _selection,
-                builder: (context, _) => IconButton(
-                  icon: const Icon(Icons.content_copy),
-                  tooltip: 'Copy',
-                  onPressed: _selection.isEmpty ? null : _copy,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.content_paste),
-                tooltip: 'Paste',
-                onPressed: _paste,
-              ),
-              ListenableBuilder(
-                listenable: _selection,
-                builder: (context, _) => IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: 'Delete',
-                  onPressed: _selection.isEmpty ? null : _delete,
-                ),
-              ),
-              const SizedBox(width: 8),
-            ],
-          ),
-          body: Row(
+          appBar: AppBar(title: const Text('SigmaDraw')),
+          body: Column(
             children: [
-              SizedBox(
-                width: 220,
-                child: Material(
-                  elevation: 1,
-                  child: StencilPalette(registry: _registry),
-                ),
+              ListenableBuilder(
+                listenable: Listenable.merge([_documentListenable, _selection]),
+                builder: (context, _) =>
+                    Ribbon(tabs: [_homeTab(), _insertTab()]),
               ),
               Expanded(
-                child: StencilCanvasArea(
-                  document: _document,
-                  selection: _selection,
-                  undoStack: _undoStack,
-                  tool: _tool,
-                ),
-              ),
-              SizedBox(
-                width: 320,
-                child: Material(
-                  elevation: 1,
-                  child: DefaultTabController(
-                    length: 5,
-                    child: Column(
-                      children: [
-                        const TabBar(
-                          labelStyle: TextStyle(fontSize: 11),
-                          tabs: [
-                            Tab(text: 'Elements'),
-                            Tab(text: 'Inspector'),
-                            Tab(text: 'Problems'),
-                            Tab(text: 'H(z)'),
-                            Tab(text: 'Pole-Zero'),
-                          ],
-                        ),
-                        Expanded(
-                          child: TabBarView(
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 220,
+                      child: Material(
+                        elevation: 1,
+                        child: StencilPalette(registry: _registry),
+                      ),
+                    ),
+                    Expanded(
+                      child: StencilCanvasArea(
+                        document: _document,
+                        selection: _selection,
+                        undoStack: _undoStack,
+                        tool: _tool,
+                        canvasKey: _canvasKey,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 320,
+                      child: Material(
+                        elevation: 1,
+                        child: DefaultTabController(
+                          length: 5,
+                          child: Column(
                             children: [
-                              ElementTree(
-                                document: _document,
-                                selection: _selection,
-                                registry: _registry,
+                              const TabBar(
+                                labelStyle: TextStyle(fontSize: 11),
+                                tabs: [
+                                  Tab(text: 'Elements'),
+                                  Tab(text: 'Inspector'),
+                                  Tab(text: 'Problems'),
+                                  Tab(text: 'H(z)'),
+                                  Tab(text: 'Pole-Zero'),
+                                ],
                               ),
-                              InspectorPanel(
-                                selection: _selection,
-                                registry: _registry,
-                                undoStack: _undoStack,
+                              Expanded(
+                                child: TabBarView(
+                                  children: [
+                                    ElementTree(
+                                      document: _document,
+                                      selection: _selection,
+                                      registry: _registry,
+                                    ),
+                                    InspectorPanel(
+                                      selection: _selection,
+                                      registry: _registry,
+                                      undoStack: _undoStack,
+                                    ),
+                                    ProblemsPanel(
+                                      document: _document,
+                                      selection: _selection,
+                                    ),
+                                    TransferFunctionPanel(document: _document),
+                                    PoleZeroPanel(document: _document),
+                                  ],
+                                ),
                               ),
-                              ProblemsPanel(
-                                document: _document,
-                                selection: _selection,
-                              ),
-                              TransferFunctionPanel(document: _document),
-                              PoleZeroPanel(document: _document),
                             ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ],

@@ -176,6 +176,31 @@ class SigmaCanvasState extends State<SigmaCanvas> {
     setState(() => viewport = SigmaViewport.fitting(bounds, viewportSize));
   }
 
+  /// [fitToContent], using this canvas's own current on-screen size — the
+  /// no-argument convenience a toolbar/ribbon "Zoom to Fit" button needs,
+  /// since it has no `Size` of its own to pass in.
+  void fitToContentAuto() {
+    // context.size (not context.findRenderObject()'s size — found by a
+    // real test to disagree with it here, returning the whole test
+    // surface's size instead of this canvas's own constrained size) is
+    // the documented, correct way to ask a BuildContext "what's my own
+    // current on-screen size", valid any time after the first layout.
+    final size = context.size;
+    if (size != null) fitToContent(size);
+  }
+
+  /// Zooms by [factor] (`>1` zooms in, `<1` zooms out) about this canvas's
+  /// own on-screen center — for a toolbar/ribbon zoom button, which
+  /// (unlike scroll-wheel zoom, see [_onPointerSignal]) has no pointer
+  /// position of its own to anchor to.
+  void zoomByFactor(double factor) {
+    final size = context.size;
+    final center = size == null
+        ? Offset.zero
+        : Offset(size.width / 2, size.height / 2);
+    setState(() => viewport = viewport.zoomBy(factor, center));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Listener(

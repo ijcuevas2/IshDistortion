@@ -99,6 +99,32 @@ SdElement embedLatex(
   required double y,
   double scale = 3,
 }) {
+  final content = positionLatexEmbed(document, embed, x: x, y: y, scale: scale);
+  document.root.appendChild(content);
+  return content;
+}
+
+/// The positioning half of [embedLatex], stopping short of attaching the
+/// result to [document] — for a caller that needs that final attach to be
+/// its own undo boundary (e.g. an equation-insert dialog routing it
+/// through `InsertChildCommand`) while still merging [embed]'s glyph-
+/// outline `<defs>` unconditionally. That defs merge is deliberately
+/// *not* part of the undo boundary: an undone insert can leave a glyph
+/// `<path>` sitting unreferenced in `<defs>`, which is inert (never
+/// painted, never round-tripped-away) rather than incorrect — the same
+/// bookkeeping-vs-visible-content split `sd_stencils`' `ensureArrowMarker`
+/// already relies on elsewhere in this codebase.
+///
+/// Returns [embed]'s content element, positioned and ready to attach
+/// (typically via `document.root.appendChild` or an `InsertChildCommand`
+/// wrapping it) — not yet attached to [document] itself.
+SdElement positionLatexEmbed(
+  SdDocument document,
+  LatexEmbed embed, {
+  required double x,
+  required double y,
+  double scale = 3,
+}) {
   SdElement? defs;
   for (final e in document.root.childElements) {
     if (e.name.local == 'defs') {
@@ -118,7 +144,6 @@ SdElement embedLatex(
     const SdQName('transform'),
     'translate(${_fmt(x)}, ${_fmt(y)}) scale(${_fmt(scale)})',
   );
-  document.root.appendChild(embed.content);
   return embed.content;
 }
 
