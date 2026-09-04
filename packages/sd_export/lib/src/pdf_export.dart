@@ -57,30 +57,51 @@ Future<void> exportToPdf(
 Future<void> _compileTexToPdfFile(String tex, String outputPath) async {
   final tempDir = await Directory.systemTemp.createTemp('sigmadraw-pdf-');
   try {
-    File('${tempDir.path}/diagram.tex').writeAsStringSync(tex);
-
-    final ProcessResult result;
-    try {
-      result = await Process.run('pdflatex', [
-        '-interaction=nonstopmode',
-        '-halt-on-error',
-        'diagram.tex',
-      ], workingDirectory: tempDir.path);
-    } on ProcessException catch (e) {
-      throw PdfExportException(
-        'pdflatex is not available on PATH.',
-        log: e.toString(),
-      );
-    }
-    if (result.exitCode != 0) {
-      throw PdfExportException(
-        'pdflatex could not compile this diagram.',
-        log: '${result.stdout}\n${result.stderr}',
-      );
-    }
-
+    await compileTexToPdfInDirectory(tex, tempDir);
     await File('${tempDir.path}/diagram.pdf').copy(outputPath);
   } finally {
     await tempDir.delete(recursive: true);
+  }
+}
+
+/// Compiles [tex] via `pdflatex` inside [tempDir] (assumed already
+/// created and empty), leaving a `diagram.pdf` there on success — the
+/// exact compile step [exportToPdf] itself uses, factored out so
+/// `eps_export.dart`'s `exportToEps` can start from the same,
+/// once-verified step before running its own further `pdftops -eps`
+/// conversion on the result, rather than duplicating this logic.
+///
+/// Deliberately public (not `_`-private) despite being called from only
+/// one other file in this package — the same reasoning
+/// `tikz_export.dart`'s `svgUnitsPerCm` documents: Dart's privacy is
+/// per-*file*, and there's no narrower "package-private" visibility to
+/// reach for instead.
+///
+/// Throws [PdfExportException] exactly as [exportToPdf] does; does
+/// *not* itself run inside an `Isolate.run` (unlike [exportToPdf]) —
+/// that's the caller's job, so a caller doing further isolate-local work
+/// (like `exportToEps`'s own `Process.run` for `pdftops`) doesn't pay for
+/// a second isolate hop in between.
+Future<void> compileTexToPdfInDirectory(String tex, Directory tempDir) async {
+  File('${tempDir.path}/diagram.tex').writeAsStringSync(tex);
+
+  final ProcessResult result;
+  try {
+    result = await Process.run('pdflatex', [
+      '-interaction=nonstopmode',
+      '-halt-on-error',
+      'diagram.tex',
+    ], workingDirectory: tempDir.path);
+  } on ProcessException catch (e) {
+    throw PdfExportException(
+      'pdflatex is not available on PATH.',
+      log: e.toString(),
+    );
+  }
+  if (result.exitCode != 0) {
+    throw PdfExportException(
+      'pdflatex could not compile this diagram.',
+      log: '${result.stdout}\n${result.stderr}',
+    );
   }
 }

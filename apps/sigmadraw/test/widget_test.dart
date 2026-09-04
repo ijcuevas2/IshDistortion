@@ -83,6 +83,24 @@ void main() {
     // sd_ui's export_pdf_dialog_test.dart via an injected fake.
   });
 
+  testWidgets('the Export ribbon opens the EPS export dialog', (tester) async {
+    await tester.pumpWidget(const SigmaDrawApp());
+
+    await tester.tap(find.text('Export'));
+    await tester.pump();
+    await tester.tap(find.text('EPS'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Export to EPS'), findsOneWidget);
+    // Same reasoning as the PDF dialog test above for not going on to
+    // tap Export: exportToEps's real pdflatex+pdftops calls need
+    // Isolate.run, not reliable from inside a widget test (see
+    // ExportEpsDialog.exportEps's doc comment) — covered instead
+    // directly in sd_export's eps_export_test.dart and via an injected
+    // fake in sd_ui's export_eps_dialog_test.dart.
+  });
+
   testWidgets('the Export ribbon opens the PNG export dialog', (tester) async {
     await tester.pumpWidget(const SigmaDrawApp());
 

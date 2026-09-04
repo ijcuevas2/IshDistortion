@@ -184,6 +184,17 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
     }
   }
 
+  Future<void> _exportEps() async {
+    final path = await showDialog<String>(
+      context: context,
+      builder: (_) => ExportEpsDialog(document: _document),
+    );
+    if (path != null && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Exported to $path')));
+    }
+  }
+
   Future<void> _exportPng() async {
     final path = await showDialog<String>(
       context: context,
@@ -335,6 +346,12 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
             label: 'PDF',
             tooltip: 'Export this diagram to PDF',
             onPressed: _exportPdf,
+          ),
+          RibbonAction(
+            icon: Icons.description_outlined,
+            label: 'EPS',
+            tooltip: 'Export this diagram to EPS',
+            onPressed: _exportEps,
           ),
         ],
       ),

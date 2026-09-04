@@ -141,9 +141,9 @@ Built and verified so far (each gate below is green — see "Build & test"):
   (there's no native file-picker dependency here) can easily name an
   unwritable location — `exportToPdf`'s own compile step can succeed
   before failing only on the final copy. 6 new `sd_ui` tests, 1 new app
-  test. Not implemented at the time: PNG@DPI (see below — landed in a
-  later checkpoint), EPS/PS and print dialogs, and a real native
-  file-save picker (a plain text field stands in for one).
+  test. Not implemented at the time: PNG@DPI and EPS/PS (both see
+  below — landed in later checkpoints), print dialogs, and a real
+  native file-save picker (a plain text field stands in for one).
 - **Phase 9 — math rendering, both paths §11 asks for.**
   `sd_graph` gained `Expr.toTex()` (mirrors `toString()`'s precedence
   handling exactly, substituting real LaTeX: braced `z^{-k}`, `\frac`,
@@ -479,10 +479,37 @@ Built and verified so far (each gate below is green — see "Build & test"):
   `BodePanel`'s message-state pattern exactly. Wired as the app's 7th
   tab. 8 new `sd_graph` tests, 5 new `sd_render` tests, 5 new `sd_ui`
   tests, 1 new app test.
+- **Phase 10 — EPS export, and a real toolchain-choice finding.**
+  `sd_export` gained `exportToEps`, closing §11's "EPS/PS" target — but
+  *not* via the classic `latex` (DVI) + `dvips -E` pipeline EPS export
+  more traditionally uses, even though that toolchain is present on
+  this system. Confirmed by hand: it produces a well-formed but
+  entirely *empty* EPS for this project's TikZ diagrams — `dvips`'s own
+  reported `%%BoundingBox` looked plausible, but Ghostscript's
+  independent ink-based bounding-box detection (`gs -sDEVICE=bbox`)
+  found nothing actually drawn on the page. The `standalone` document
+  class's bounding-box computation (or TikZ itself) evidently depends
+  on pdfTeX-only primitives a plain, non-PDF `latex` run doesn't
+  provide. `exportToEps` instead reuses `exportToPdf`'s own
+  already-verified `pdflatex` compile step (factored out into a new,
+  shared `compileTexToPdfInDirectory` — the same "make the shared step
+  non-private, document why" pattern `svgUnitsPerCm` already
+  established) and converts *that* PDF to EPS via `pdftops -eps`
+  (poppler-utils) — confirmed by hand, the same way, to produce a real,
+  correctly-bounded EPS. `PdfExportException` (the compile stage) and a
+  new `EpsExportException` (the `pdftops` stage) are both possible,
+  and distinguished, since either half of this two-stage pipeline can
+  independently fail. `sd_ui` gained `ExportEpsDialog` (the same
+  injectable-seam shape as `ExportPdfDialog`, for the same
+  `Isolate.run`/`testWidgets` reason) and the app's Export ribbon tab
+  gained an "EPS" action alongside "PDF" in the Vector group. 3 new
+  `sd_export` tests (real, compiling end-to-end, checking an actual
+  non-degenerate bounding box — not just "a file came out"), 7 new
+  `sd_ui` tests, 1 new app test.
 
-**Next, if this continues**: the 5 native pen plugins (6/7), the rest
-of vector export — EPS/print (10) —, §5.11's spectrogram plot, and
-polish (11) are all **not started**, and §5.5/§5.7/§5.8 remain thin.
+**Next, if this continues**: the 5 native pen plugins (6/7), print
+export (10), §5.11's spectrogram plot, and polish (11) are all **not
+started**, and §5.5/§5.7/§5.8 remain thin.
 Given the true scope of §0-§15 (a
 production, cross-platform, multi-native-plugin app), these were not
 attempted in the interest of not shipping shallow/fake versions of
@@ -538,8 +565,8 @@ faked. Concretely still missing:
   remains is the built-in DSP label helpers (gain-coefficient-on-
   triangle, `x[n]`/`y[n]`-on-edge, ...) beyond what a stencil already
   renders itself, and the optional experimental WASM-TeX fallback.
-- **The rest of vector/raster export (§11, Phase 10): EPS/PS and print
-  dialogs.** TikZ, PDF, and PNG export are all done, and PDF/PNG both
+- **The rest of vector/raster export (§11, Phase 10): print dialogs.**
+  TikZ, PDF, EPS, and PNG export are all done, and PDF/EPS/PNG each
   have a ribbon UI entry point (see above) — SVG native/plain export
   (Phase 1) and TikZ still don't have one (TikZ's own output is meant
   to be pasted into a LaTeX document, so a file-save dialog isn't
@@ -565,9 +592,9 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
-/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF/PNG-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode/Nyquist
+/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF/EPS/PNG-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode/Nyquist
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
-/packages/sd_export        # ✅ Phase 10 (partial) — TikZ+PDF+PNG export (PDF/PNG have ribbon UI entry points); EPS/print pending
+/packages/sd_export        # ✅ Phase 10 (partial) — TikZ+PDF+EPS+PNG export (PDF/EPS/PNG have ribbon UI entry points); print pending
 /packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app
 /plugins/sd_pen_*           # placeholder READMEs — Phase 6 native pen plugins
 /docs                       # architecture-mining notes (§1) + this project's own notes
@@ -916,6 +943,24 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   non-negative half (already needed, and already computed identically
   to `computeBodePlot`'s own sweep) exists. Halves the number of
   `Expr`/`Complex` evaluations for the same visual result.
+- **`exportToEps` converts an already-compiled PDF via `pdftops -eps`,
+  not the classic `latex` (DVI) + `dvips -E` pipeline EPS export more
+  traditionally uses — confirmed by hand that the latter silently
+  produces an empty file for this project's TikZ diagrams.** `dvips`'s
+  own reported `%%BoundingBox` looked entirely plausible on inspection;
+  only Ghostscript's independent ink-based bounding-box detection
+  (`gs -sDEVICE=bbox`) revealed nothing was actually drawn on the page.
+  The `standalone` document class's bounding-box computation (or TikZ
+  itself) evidently depends on pdfTeX-only primitives a plain, non-PDF
+  `latex` run doesn't provide — plausible-looking metadata is not the
+  same as verifying real output, the same lesson this project's export
+  functions have applied from the start (see `exportToTikz`'s own
+  `pdflatex`-compiles-for-real tests). Going through the PDF this
+  project already knows compiles correctly sidesteps the whole
+  question; `pdflatex`'s compile step itself is shared with
+  `exportToPdf` via a new, non-private `compileTexToPdfInDirectory`
+  (the same reasoning `svgUnitsPerCm` already established for sharing
+  one file's internals with another in this package).
 
 ## Build & test
 
