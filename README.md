@@ -626,11 +626,30 @@ Built and verified so far (each gate below is green — see "Build & test"):
   IIR all-pole/pole-zero lattice) is now complete — only wave-digital
   and state-space (A,B,C,D) remain from all of §5.5. 10 new
   `sd_stencils` tests (90 → 100).
+- **Phase 7 — state-space (A,B,C,D), leaving only wave-digital in all
+  of §5.5.** `buildStateSpaceFilter` is the one filter-structure
+  generator here that's naturally matrix-parameterized (`x[n+1] =
+  A·x[n] + B·u[n]`, `y[n] = C·x[n] + D·u[n]`, for an `n`-dimensional
+  state vector) rather than a fixed handful of scalar coefficients —
+  one `delay` per state variable, each one's *input* wired to the
+  freshly-computed next-state formula (`n+1` gains summed via a chain
+  of adders, same pattern every other generator here already uses),
+  its *output* read as the current state; the output tap sums `C·x +
+  D·u` the same way. Verified two ways: an `n=1` case against the
+  closed-form scalar formula `H(z) = D + z⁻¹·C·B/(1-z⁻¹·A)`, and an
+  `n=2` case against a direct, textbook 2×2 matrix-inversion
+  computed independently in the test itself (not re-deriving the
+  generator's own wiring) — both derived from `H(z) = D +
+  z⁻¹·C·(I-z⁻¹·A)⁻¹·B`, which the generator's own doc comment derives
+  from the fact that a `delay` block's `output = z⁻¹·input` (already
+  established throughout this project) is exactly what a state
+  register's own update equation needs, with no separate "next state"
+  bookkeeping beyond the diagram's own wiring. 6 new `sd_stencils`
+  tests (100 → 106).
 
 **Next, if this continues**: the 5 native pen plugins (6/7) and print
-export (10) are all **not started**; §5.5's wave-digital/state-space
-forms, §5.7, and §5.8 remain thin/
-unstarted.
+export (10) are all **not started**; §5.5's wave-digital form, §5.7,
+and §5.8 remain thin/unstarted.
 Given the true scope of §0-§15 (a
 production, cross-platform, multi-native-plugin app), these were not
 attempted in the interest of not shipping shallow/fake versions of
@@ -668,14 +687,14 @@ faked. Concretely still missing:
   Wayland tablet_v2) is a real native-code undertaking on its own.
 - **The rest of §5.5/§5.7/§5.8 (Phase 7); §5.11 is now fully done.**
   §5.5's FIR direct/transposed-direct/lattice, biquad DF2T/DF-I/DF-II,
-  biquad cascade/parallel, comb, allpass, CIC, and the coupled/
-  normalized (all-pole, then pole-and-zero) lattice are all generated
-  (see above) — only wave-digital and state-space (A,B,C,D) forms
-  remain unbuilt from §5.5 (both are a genuinely different shape of
-  problem than every generator built so far: wave-digital filters are
-  built from adaptors, not this project's gain/delay/adder primitives;
-  state-space is naturally matrix-parameterized, not a fixed handful
-  of scalar coefficients).
+  biquad cascade/parallel, comb, allpass, CIC, the coupled/normalized
+  (all-pole, then pole-and-zero) lattice, and state-space (A,B,C,D)
+  are all generated (see above) — only wave-digital forms remain
+  unbuilt from §5.5, the one generator family here that's a genuinely
+  different shape of problem than everything else built so far: wave-
+  digital filters are built from adaptors (series/parallel, modeling
+  wave variables on transmission-line-like ports), not this project's
+  gain/delay/adder primitives.
   §5.7 (comms/modulation — mixer, NCO, PLL, Costas loop, ...) and §5.8
   (adaptive/statistical — LMS/RLS, ...) are entirely unimplemented.
   §5.11's
@@ -717,7 +736,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
 /packages/sd_graph         # ✅ Phase 4+8+5.11 (done) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram
-/packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR/IIR direct/transposed/DF-I/II/DF2T/cascade/parallel + lattice (FIR, all-pole, pole-zero) + comb/allpass/CIC generators
+/packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + §5.5 nearly complete (FIR/IIR/lattice/comb/allpass/CIC/state-space; only wave-digital left) generators
 /packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, done) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending

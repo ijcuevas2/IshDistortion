@@ -1457,3 +1457,183 @@ FilterStructure buildCicFilter({
     outputPortId: curPort,
   );
 }
+
+/// §5.5: state-space (`A`, `B`, `C`, `D`) — the one filter-structure
+/// family here that's naturally *matrix*-parameterized rather than a
+/// fixed handful of scalar coefficients: `x[n+1] = A·x[n] + B·u[n]`,
+/// `y[n] = C·x[n] + D·u[n]`, for an `n`-dimensional state vector `x`
+/// (`n = A.length`, and [a] must be square, [b]/[c] each length `n`).
+///
+/// One [delay] block per state variable represents `x_i[n]` as its own
+/// *output* (available now); each delay's *input* is wired to the
+/// freshly-computed `x_i[n+1] = Σ_j A[i][j]·x_j[n] + B[i]·u[n]` (`n+1`
+/// gains summed via a chain of 2-input [adder]s, mirroring every other
+/// generator's own summing-chain pattern). The output is built the same
+/// way: `y[n] = Σ_i C[i]·x_i[n] + D·u[n]`.
+///
+/// Because a [delay]'s own semantics are `output = z⁻¹·input` (verified
+/// throughout this project), wiring `x_i[n+1]`'s formula into a delay's
+/// input and reading `x_i[n]` off its output means the delay itself
+/// realizes exactly the `z⁻¹` the state-update equation needs — no
+/// separate "next state" bookkeeping is needed beyond the diagram's own
+/// wiring. In transform terms this gives `X(z) = z⁻¹·(I -
+/// z⁻¹·A)⁻¹·B·U(z)` and `H(z) = D + z⁻¹·C·(I - z⁻¹·A)⁻¹·B` — see this
+/// function's own test for a direct (by-hand matrix inversion, not
+/// re-deriving the generator's own wiring) numeric check at `n`=1 and
+/// `n`=2.
+FilterStructure buildStateSpaceFilter({
+  required String idPrefix,
+  required List<List<num>> a,
+  required List<num> b,
+  required List<num> c,
+  required num d,
+  double x = 0,
+  double y = 0,
+}) {
+  final n = a.length;
+  if (n == 0) {
+    throw ArgumentError.value(a, 'a', 'must not be empty');
+  }
+  for (final row in a) {
+    if (row.length != n) {
+      throw ArgumentError.value(a, 'a', 'must be square ($n x $n)');
+    }
+  }
+  if (b.length != n) {
+    throw ArgumentError.value(b, 'b', 'must have length $n (one per state)');
+  }
+  if (c.length != n) {
+    throw ArgumentError.value(c, 'c', 'must have length $n (one per state)');
+  }
+
+  final elements = <SdElement>[];
+  var seq = 0;
+  String nextId(String kind) => '$idPrefix-$kind${seq++}';
+  void wire(String from, String fromPort, String to, String toPort) =>
+      elements.add(
+        buildEdge(
+          id: nextId('e'),
+          fromBlock: from,
+          fromPort: fromPort,
+          toBlock: to,
+          toPort: toPort,
+        ),
+      );
+
+  // Sums a chain of gain-block ids (each already computing one term of
+  // a dot product) via 2-input adders, returning the final (id, port).
+  (String, String) sumTerms(List<String> termIds, double sx, double sy) {
+    var accId = termIds[0];
+    var accPort = 'out1';
+    for (var k = 1; k < termIds.length; k++) {
+      final addId = nextId('add');
+      elements.add(
+        adder.instantiate(instanceId: addId, x: sx + k * _stageDx, y: sy),
+      );
+      wire(accId, accPort, addId, 'in1');
+      wire(termIds[k], 'out1', addId, 'in2');
+      accId = addId;
+      accPort = 'out1';
+    }
+    return (accId, accPort);
+  }
+
+  final tapU = nextId('tap'); // external input u[n].
+  elements.add(
+    pickoffNode.instantiate(instanceId: tapU, x: x, y: y + (n + 1) * _stageDy),
+  );
+
+  final stateDelays = <String>[];
+  for (var i = 0; i < n; i++) {
+    final delayId = nextId('d');
+    elements.add(
+      delay.instantiate(
+        instanceId: delayId,
+        x: x + 4 * _stageDx,
+        y: y + i * _stageDy,
+      ),
+    );
+    stateDelays.add(delayId);
+  }
+
+  // x_i[n+1] = sum_j A[i][j]*x_j[n] + B[i]*u[n], wired into stateDelays[i].
+  for (var i = 0; i < n; i++) {
+    final terms = <String>[];
+    for (var j = 0; j < n; j++) {
+      final g = nextId('g');
+      elements.add(
+        gain.instantiate(
+          instanceId: g,
+          x: x + _stageDx,
+          y: y + (i + j) * _stageDy,
+          params: {'gain': a[i][j]},
+          label: 'A$i$j',
+        ),
+      );
+      wire(stateDelays[j], 'out1', g, 'in1');
+      terms.add(g);
+    }
+    final gB = nextId('g');
+    elements.add(
+      gain.instantiate(
+        instanceId: gB,
+        x: x + _stageDx,
+        y: y + (i + n) * _stageDy,
+        params: {'gain': b[i]},
+        label: 'B$i',
+      ),
+    );
+    wire(tapU, 'out1', gB, 'in1');
+    terms.add(gB);
+
+    final (sumId, sumPort) = sumTerms(
+      terms,
+      x + 2 * _stageDx,
+      y + i * _stageDy,
+    );
+    wire(sumId, sumPort, stateDelays[i], 'in1');
+  }
+
+  // y[n] = sum_i C[i]*x_i[n] + D*u[n].
+  final outTerms = <String>[];
+  for (var i = 0; i < n; i++) {
+    final g = nextId('g');
+    elements.add(
+      gain.instantiate(
+        instanceId: g,
+        x: x + 5 * _stageDx,
+        y: y + i * _stageDy,
+        params: {'gain': c[i]},
+        label: 'C$i',
+      ),
+    );
+    wire(stateDelays[i], 'out1', g, 'in1');
+    outTerms.add(g);
+  }
+  final gD = nextId('g');
+  elements.add(
+    gain.instantiate(
+      instanceId: gD,
+      x: x + 5 * _stageDx,
+      y: y + n * _stageDy,
+      params: {'gain': d},
+      label: 'D',
+    ),
+  );
+  wire(tapU, 'out1', gD, 'in1');
+  outTerms.add(gD);
+
+  final (outId, outPort) = sumTerms(
+    outTerms,
+    x + 6 * _stageDx,
+    y + n * _stageDy,
+  );
+
+  return FilterStructure(
+    elements: elements,
+    inputBlockId: tapU,
+    inputPortId: 'in1',
+    outputBlockId: outId,
+    outputPortId: outPort,
+  );
+}

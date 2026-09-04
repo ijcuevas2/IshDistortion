@@ -891,6 +891,144 @@ void main() {
     });
   });
 
+  group('buildStateSpaceFilter', () {
+    test('produces a graph with no algebraic loop, for n=1 and n=2', () {
+      final n1 = buildStateSpaceFilter(
+        idPrefix: 'ss1',
+        a: [
+          [0.5],
+        ],
+        b: [2.0],
+        c: [0.5],
+        d: 1.0,
+      );
+      expect(
+        detectAlgebraicLoops(SignalGraph.fromDocument(_wrapWithSourceSink(n1))),
+        isEmpty,
+      );
+
+      final n2 = buildStateSpaceFilter(
+        idPrefix: 'ss2',
+        a: [
+          [0.5, 0.1],
+          [0.2, 0.3],
+        ],
+        b: [1.0, 0.5],
+        c: [0.3, 0.2],
+        d: 0.1,
+      );
+      expect(
+        detectAlgebraicLoops(SignalGraph.fromDocument(_wrapWithSourceSink(n2))),
+        isEmpty,
+      );
+    });
+
+    test('n=1 matches H(z) = D + z^-1*C*B / (1 - z^-1*A) — the scalar '
+        'case of H(z) = D + z^-1*C*(I-z^-1*A)^-1*B', () {
+      const a = 0.5, b = 2.0, c = 0.5, d = 1.0;
+      final structure = buildStateSpaceFilter(
+        idPrefix: 'ss',
+        a: [
+          [a],
+        ],
+        b: [b],
+        c: [c],
+        d: d,
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      // Not 0.5: that's exactly this system's own pole (its single
+      // eigenvalue is a=0.5).
+      for (final z in [2.0, 5.0, -3.0, -2.0]) {
+        final zInv = _powInv(z, 1);
+        final expected = d + zInv * c * b / (1 - zInv * a);
+        expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+      }
+    });
+
+    test('n=2 matches a direct (independent, by-hand 2x2 matrix '
+        'inversion) computation of H(z) = D + z^-1*C*(I-z^-1*A)^-1*B', () {
+      const a = [
+        [0.5, 0.1],
+        [0.2, 0.3],
+      ];
+      const b = [1.0, 0.5];
+      const c = [0.3, 0.2];
+      const d = 0.1;
+      final structure = buildStateSpaceFilter(
+        idPrefix: 'ss',
+        a: a,
+        b: b,
+        c: c,
+        d: d,
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      // Eigenvalues of A are ~0.573 and ~0.227 (roots of
+      // lambda^2-0.8*lambda+0.13=0) — none of these z values land on
+      // either.
+      for (final z in [2.0, 5.0, -3.0, 0.5]) {
+        expect(
+          result.h.evaluate({}, z: z),
+          closeTo(_stateSpaceH2x2(a, b, c, d, z), 1e-9),
+        );
+      }
+    });
+
+    test('rejects an empty A', () {
+      expect(
+        () => buildStateSpaceFilter(idPrefix: 'x', a: [], b: [], c: [], d: 0),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects a non-square A', () {
+      expect(
+        () => buildStateSpaceFilter(
+          idPrefix: 'x',
+          a: [
+            [0.5, 0.1],
+          ],
+          b: [1.0],
+          c: [1.0],
+          d: 0,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects a wrong-length B or C', () {
+      expect(
+        () => buildStateSpaceFilter(
+          idPrefix: 'x',
+          a: [
+            [0.5, 0.1],
+            [0.2, 0.3],
+          ],
+          b: [1.0],
+          c: [1.0, 0.5],
+          d: 0,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => buildStateSpaceFilter(
+          idPrefix: 'x',
+          a: [
+            [0.5, 0.1],
+            [0.2, 0.3],
+          ],
+          b: [1.0, 0.5],
+          c: [1.0],
+          d: 0,
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
   test('buildFirDirectForm rejects an empty coefficient list', () {
     expect(
       () => buildFirDirectForm(idPrefix: 'x', coefficients: []),
@@ -905,4 +1043,25 @@ num _powInv(num z, int i) {
     result /= z;
   }
   return result;
+}
+
+/// `D + z^-1*C*(I - z^-1*A)^-1*B` for a 2x2 `A`, computed directly via
+/// the textbook 2x2 matrix-inversion formula — an independent
+/// computation path from `buildStateSpaceFilter`'s own wiring, used
+/// only by its test.
+num _stateSpaceH2x2(List<List<num>> a, List<num> b, List<num> c, num d, num z) {
+  final zInv = 1 / z;
+  final m00 = 1 - zInv * a[0][0];
+  final m01 = -zInv * a[0][1];
+  final m10 = -zInv * a[1][0];
+  final m11 = 1 - zInv * a[1][1];
+  final det = m00 * m11 - m01 * m10;
+  final inv00 = m11 / det;
+  final inv01 = -m01 / det;
+  final inv10 = -m10 / det;
+  final inv11 = m00 / det;
+  final cm0 = c[0] * inv00 + c[1] * inv10;
+  final cm1 = c[0] * inv01 + c[1] * inv11;
+  final cmb = cm0 * b[0] + cm1 * b[1];
+  return d + zInv * cmb;
 }
