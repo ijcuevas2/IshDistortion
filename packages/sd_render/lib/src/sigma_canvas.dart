@@ -8,12 +8,17 @@ import 'package:sd_document/sd_document.dart';
 import 'geometry/svg_transform.dart';
 import 'grid_painter.dart';
 import 'scene/hit_test.dart';
+import 'scene/port_handles.dart';
 import 'scene/scene.dart';
 import 'scene/scene_painter.dart';
 import 'selection/handles.dart';
 import 'selection/selection_model.dart';
 import 'selection/selection_overlay_painter.dart';
 import 'viewport.dart';
+
+/// Document-unit tolerance (before dividing by zoom) for starting/ending a
+/// connector drag on a port dot.
+const double kPortHitTolerance = 8;
 
 /// The composed, interactive infinite canvas (§8/§9): pan/zoom/grid, the
 /// retained scene, click/marquee selection, and move + uniform-corner-scale
@@ -25,8 +30,13 @@ import 'viewport.dart';
 /// the gesture arena — and so the eventual ink tool (Phase 6) can share
 /// this same pointer-routing style.
 ///
+/// Dragging from one port dot to another creates a real `sd:edge` (§9:
+/// "connectors attach to typed ports") as a straight line — orthogonal
+/// routing (a pure-Dart port of libavoid's algorithm), snapping, and edge
+/// dtype validation feedback are Phase 9's job, not this one's.
+///
 /// Not implemented yet (later phases — see §9, §12): rotate/flip handles,
-/// snapping, connector routing, shift-click multi-select, keyboard nudge.
+/// snapping, shift-click multi-select, keyboard nudge.
 class SigmaCanvas extends StatefulWidget {
   const SigmaCanvas({
     super.key,
@@ -46,7 +56,7 @@ class SigmaCanvas extends StatefulWidget {
   State<SigmaCanvas> createState() => SigmaCanvasState();
 }
 
-enum _DragMode { none, pan, marquee, move, scale }
+enum _DragMode { none, pan, marquee, move, scale, connect }
 
 class SigmaCanvasState extends State<SigmaCanvas> {
   late final Scene scene;
@@ -62,6 +72,8 @@ class SigmaCanvasState extends State<SigmaCanvas> {
   HandleKind? _activeHandle;
   Rect? _scaleAnchorDocBounds;
   final Map<SdElement, Matrix4> _dragStartLocalTransforms = {};
+  PortHandle? _connectStart;
+  Offset? _connectCurrentScreen;
 
   @override
   void initState() {
@@ -130,6 +142,9 @@ class SigmaCanvasState extends State<SigmaCanvas> {
                 spatialIndex: scene.spatialIndex,
                 viewport: viewport,
                 marquee: _marqueeScreen,
+                portHandles: collectPortHandles(widget.document),
+                connectStart: _connectStart,
+                connectCurrentScreen: _connectCurrentScreen,
               ),
               size: Size.infinite,
             ),
@@ -164,6 +179,19 @@ class SigmaCanvasState extends State<SigmaCanvas> {
     }
     if (event.buttons & kPrimaryButton == 0) {
       _dragMode = _DragMode.none;
+      return;
+    }
+
+    final docPointForPorts = viewport.screenToDocument(event.localPosition);
+    final startPort = nearestPortHandle(
+      collectPortHandles(widget.document),
+      docPointForPorts,
+      kPortHitTolerance / viewport.scale,
+    );
+    if (startPort != null) {
+      _dragMode = _DragMode.connect;
+      _connectStart = startPort;
+      setState(() => _connectCurrentScreen = event.localPosition);
       return;
     }
 
@@ -240,6 +268,8 @@ class SigmaCanvasState extends State<SigmaCanvas> {
         }
       case _DragMode.scale:
         _applyScaleDrag(event.localPosition);
+      case _DragMode.connect:
+        setState(() => _connectCurrentScreen = event.localPosition);
     }
   }
 
@@ -250,12 +280,80 @@ class SigmaCanvasState extends State<SigmaCanvas> {
         viewport.screenToDocumentRect(_marqueeScreen!),
       );
       if (hits.isNotEmpty) selection.selectAll(hits);
-      setState(() => _marqueeScreen = null);
     }
+    if (_dragMode == _DragMode.connect && _connectStart != null) {
+      _finishConnector(event.localPosition);
+    }
+    setState(() {
+      _marqueeScreen = null;
+      _connectStart = null;
+      _connectCurrentScreen = null;
+    });
     _dragMode = _DragMode.none;
     _activeHandle = null;
     _scaleAnchorDocBounds = null;
     _dragStartLocalTransforms.clear();
+  }
+
+  /// Completes a connector drag if [screenPosition] lands on a port that
+  /// pairs validly with [_connectStart] — one output, one input, on
+  /// different blocks — creating a real `sd:edge` (§9: "connectors attach
+  /// to typed ports"). Routing is a straight line for now; orthogonal
+  /// routing is Phase 9's `libavoid`-inspired router.
+  void _finishConnector(Offset screenPosition) {
+    final start = _connectStart!;
+    final docPoint = viewport.screenToDocument(screenPosition);
+    final end = nearestPortHandle(
+      collectPortHandles(widget.document),
+      docPoint,
+      kPortHitTolerance / viewport.scale,
+    );
+    if (end == null || identical(end.element, start.element)) return;
+
+    final PortHandle output;
+    final PortHandle input;
+    if (start.isOutput && !end.isOutput) {
+      output = start;
+      input = end;
+    } else if (!start.isOutput && end.isOutput) {
+      output = end;
+      input = start;
+    } else {
+      return; // output-to-output or input-to-input: not a valid connection.
+    }
+    final fromId = output.element.blockId;
+    final toId = input.element.blockId;
+    if (fromId == null || toId == null) return;
+
+    final edgeElement =
+        SdElement(
+            const SdQName('path'),
+            attributes: {
+              const SdQName('d'):
+                  'M${output.position.dx},${output.position.dy} '
+                  'L${input.position.dx},${input.position.dy}',
+              const SdQName('stroke'): '#1a1a1a',
+              const SdQName('stroke-width'): '2',
+              const SdQName('fill'): 'none',
+              const SdQName('vector-effect'): 'non-scaling-stroke',
+            },
+          )
+          ..edgeId = _freshEdgeId()
+          ..edgeFrom = '$fromId:${output.portId}'
+          ..edgeTo = '$toId:${input.portId}';
+    widget.document.root.appendChild(edgeElement);
+  }
+
+  String _freshEdgeId() {
+    final existing = widget.document.root.descendantElements
+        .map((e) => e.edgeId)
+        .whereType<String>()
+        .toSet();
+    var n = 1;
+    while (existing.contains('e$n')) {
+      n++;
+    }
+    return 'e$n';
   }
 
   Rect? _unionSelectionBounds() {

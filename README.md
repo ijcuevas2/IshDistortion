@@ -38,22 +38,79 @@ Built and verified so far (each gate below is green — see "Build & test"):
   (tapped-delay-line, rate converters, ...) are deliberately deferred to
   Phase 7. `packages/sd_ui` gained a searchable/draggable stencil
   palette, a drop-to-place canvas wrapper, an element tree, and a
-  property inspector, all wired into the app shell (plain `Row` layout —
-  the dockable ribbon shell is Phase 5). 25 + 7 more tests.
+  property inspector. 25 + 7 tests.
+- **Phase 2/9 addendum — connectors.** `sd_render`'s canvas gained
+  drag-from-port-to-port connector creation (a straight-line `sd:edge`,
+  correctly directed regardless of which end you drag from/to) and
+  live port dots, plus `marker-end` arrowhead rendering — without these
+  there was no way to actually wire up a diagram to analyze. Orthogonal
+  routing (libavoid-style) is still Phase 9's job.
+- **Phase 4 + 8 (reprioritized ahead of 5-7) — the semantic graph and its
+  analysis.** `packages/sd_graph`: typed `Port`/`Block`/`Edge` extracted
+  from a document's `sd:*` attributes; full §4 validation (dangling
+  edges, type-widening rules, vlen/sample-rate mismatches, unsupported
+  arity, unconnected ports); Tarjan-SCC-based algebraic-loop detection;
+  sample-rate propagation (×L/÷M at up/downsamplers); Mason's gain
+  formula over a small symbolic-expression engine, producing a real
+  `H(z)`; GNU-Radio-style JSON/YAML netlist + Graphviz DOT export.
+  **Verified against a full biquad Direct Form II Transposed built from
+  the Phase 3 primitives** (adder/gain/delay, wired exactly as a real
+  diagram would be): it validates with no algebraic loop, and Mason's
+  formula yields `H(z) = (b0+b1·z⁻¹+b2·z⁻²)/(1+a1·z⁻¹+a2·z⁻²)` — checked
+  both analytically (by hand) and numerically at several points,
+  including with unbound symbolic coefficients — this is §13's named
+  acceptance criterion. `sd_ui` gained a live Problems panel and an H(z)
+  readout, both wired into the app. 45 + 21 tests (7 new in `sd_ui`, 3 in
+  `sd_render` for connector creation).
+  Not implemented: hierarchical/subsystem blocks (flagged via
+  `Block.isSubsystem`, not built), pole-zero generation, and treating a
+  multirate block as anything but unity gain in H(z) — all documented in
+  code comments at the point they matter.
 
-**Reprioritized next**: rather than strictly Phase 4→5→6→7 in order, Phase
-4 (semantic graph) and Phase 8 (analysis: Tarjan loop detection, Mason's
-gain formula) are being pulled forward, since together they're this
-project's core "semantically aware, not merely a drawing tool" claim and
-§13's acceptance criteria name them explicitly (a biquad DF2T validating
-and Mason yielding the correct H(z)). Ribbon UI (5), ink/pen + native
-plugins (6), the rest of the stencil library (7), LaTeX (9), export (10),
-and polish (11) follow as time allows.
+**Next, if this continues**: Ribbon UI (5), ink/pen input + 5 native
+plugins (6), the rest of the stencil library (7), LaTeX (9), vector
+export (10), and polish (11) are all **not started**. Given the true
+scope of §0-§15 (a production, cross-platform, multi-native-plugin app),
+these were not attempted in this session in the interest of not
+shipping shallow/fake versions of them — see "What's not built" below.
 
-Not started: `packages/sd_graph`, `sd_ink`, `sd_input`, `sd_latex`,
-`sd_export`, and `sd_commands` are empty scaffolds (a `library;` stub, no
-`test/`), and `plugins/sd_pen_*` are placeholder READMEs — see each one
-for what it'll need to become in Phase 6.
+`packages/sd_ink`, `sd_input`, `sd_latex`, `sd_export`, and `sd_commands`
+are still empty scaffolds (a `library;` stub, no `test/`), and
+`plugins/sd_pen_*` are placeholder READMEs — see each one for what it'll
+need to become in Phase 6.
+
+## What's not built (be honest about scope)
+
+This spec describes a production, multi-platform application with 5
+native pen-input plugins, ~80 DSP stencils, a full ribbon+docking UI, a
+LaTeX pipeline, and vector export — realistically months of work for a
+team, not one sitting. What exists now is a solid, fully-tested
+**foundation and vertical slice**: place a block, wire it to another,
+see it validated, see its transfer function — all for real, nothing
+faked. Concretely still missing:
+
+- **Ribbon UI (§10, Phase 5).** The app is a plain `Row` of panels, not
+  the tabbed/contextual ribbon with galleries and dialog launchers.
+- **Ink/pen (§6-§7, Phase 6) and all 5 native plugins.** No stroke
+  model, no pointer-classification/palm-rejection pipeline, and none of
+  `plugins/sd_pen_{windows,macos,linux,android,ios}` has been written —
+  this sandbox can only build/run the Linux desktop target anyway, so
+  the other 4 plugins couldn't have been compiled or tested here even
+  if written.
+- **§5.4-§5.11's remaining ~65 stencils (Phase 7)**: quantization,
+  filter-structure templates (incl. a literal "biquad" composite you
+  could drag onto the canvas — today you wire one from primitives, as
+  the test above does), transforms, comms/modulation, adaptive filters,
+  control-system blocks, hardware blocks, and analysis-plot objects
+  (pole-zero, Bode, etc.).
+- **LaTeX (§11, Phase 9)**, **vector PDF/EPS/TikZ export and printing**
+  (§11, Phase 10) — Phase 1's SVG native/plain export is the only export
+  path that exists.
+- **Polish (§11, Phase 11)**: autosave, templates, dark mode, i18n,
+  accessibility, perf tuning at the ≥10,000-element scale, tablet UX.
+- Within what *is* built: snapping, orthogonal connector routing
+  (today's connectors are straight lines), multi-select-by-shift-click,
+  keyboard shortcuts, and rotate/flip transform handles.
 
 ## Repo layout
 
@@ -62,12 +119,12 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 ```
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
-/packages/sd_graph         # empty — Phase 4 (semantic graph: ports/edges/types/validation)
+/packages/sd_graph         # ✅ Phase 4+8 — semantic graph, validation, Tarjan, Mason, rate/netlist
 /packages/sd_stencils      # ✅ Phase 3 (core) — DSP symbol library, §5.1-5.3; §5.4-5.11 in Phase 7
-/packages/sd_render        # ✅ Phase 2 — scene/display-list, CustomPainters, pan/zoom, selection
+/packages/sd_render        # ✅ Phase 2 (+connectors) — scene, pan/zoom, selection, port-to-port wiring
 /packages/sd_ink           # empty — Phase 6 (stroke model, pressure curves)
 /packages/sd_input         # empty — Phase 6 (pointer/pen pipeline)
-/packages/sd_ui            # 🚧 Phase 3 (partial) — palette/tree/inspector; ribbon/docking in Phase 5
+/packages/sd_ui            # 🚧 Phase 3+4 (partial) — palette/tree/inspector/problems/H(z); ribbon in 5
 /packages/sd_latex         # empty — Phase 9 (math rendering)
 /packages/sd_export        # empty — Phase 10 (SVG/PDF/PNG/EPS/TikZ export)
 /packages/sd_commands      # empty — undo/redo (no phase owns it alone; needed by 2+)
@@ -112,6 +169,23 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   `sd_graph`'s job (§4), built in Phase 4 on top of these raw accessors.
   Keeping it out of `sd_document` keeps that package at the generic
   XML/round-trip level it's actually scoped to.
+- **`directFeedthrough` is persisted as `sd:directFeedthrough`, not just
+  held on an in-memory `StencilDefinition`.** A reopened document has to
+  be analyzable (loop detection needs this per block) without access to
+  whatever stencil registry originally created it — "the `.svg` file IS
+  the document" (§0) has to include this fact, not just geometry.
+- **Mason's formula uses a small symbolic `Expr` engine with eager-but-
+  incomplete simplification, verified by evaluating at sample points
+  rather than by canonical-form string comparison.** A fully-canonicalizing
+  computer-algebra system is a project of its own; evaluating the derived
+  `H(z)` at several `z`/parameter values against an independently-derived
+  closed form (see `mason_test.dart`'s biquad case) is rigorous without
+  needing one, and is how that test actually caught the rate-propagation
+  bug described above.
+- **An edge is created by dragging port-dot to port-dot on the canvas**
+  (`sd_render`'s `SigmaCanvas`), not through a separate "connector tool" —
+  there's no tool-mode concept yet (that's the ribbon's job, Phase 5), so
+  the canvas just recognizes "pointer-down near a port" directly.
 
 ## Build & test
 
@@ -131,6 +205,5 @@ same steps, plus a build smoke-test, on Linux/macOS/Windows.
 
 ## Git
 
-A repo was initialized here (`git init`) but nothing has been committed
-yet — the working tree is staged and ready whenever you want the first
-commit.
+A repo was initialized here (`git init`); commits so far track each
+phase checkpoint (`git log --oneline`).

@@ -6,9 +6,10 @@ import 'package:sd_ui/sd_ui.dart';
 
 /// SigmaDraw application entry point.
 ///
-/// This is still an early scaffold: [SigmaDrawHome] wires up real
-/// Phase 2/3 pieces — a [StencilCanvasArea] (drop-to-place canvas), a
-/// [StencilPalette], an [ElementTree], and an [InspectorPanel], sharing
+/// This is still an early scaffold: [SigmaDrawHome] wires up real Phase
+/// 2-4 pieces — a [StencilCanvasArea] (drop-to-place, drag-to-connect
+/// canvas), a [StencilPalette], and a tabbed [ElementTree] /
+/// [InspectorPanel] / [ProblemsPanel] / [TransferFunctionPanel], sharing
 /// one [SelectionModel] — in a plain [Row] layout standing in for the
 /// dockable-panel ribbon shell that Phase 5 will build.
 void main() {
@@ -78,40 +79,44 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
             ),
           ),
           SizedBox(
-            width: 280,
+            width: 320,
             child: Material(
               elevation: 1,
-              child: Column(
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('Elements'),
+              child: DefaultTabController(
+                length: 4,
+                child: Column(
+                  children: [
+                    const TabBar(
+                      labelStyle: TextStyle(fontSize: 11),
+                      tabs: [
+                        Tab(text: 'Elements'),
+                        Tab(text: 'Inspector'),
+                        Tab(text: 'Problems'),
+                        Tab(text: 'H(z)'),
+                      ],
                     ),
-                  ),
-                  Expanded(
-                    child: ElementTree(
-                      document: _document,
-                      selection: _selection,
-                      registry: _registry,
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          ElementTree(
+                            document: _document,
+                            selection: _selection,
+                            registry: _registry,
+                          ),
+                          InspectorPanel(
+                            selection: _selection,
+                            registry: _registry,
+                          ),
+                          ProblemsPanel(
+                            document: _document,
+                            selection: _selection,
+                          ),
+                          TransferFunctionPanel(document: _document),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Divider(height: 1),
-                  const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('Inspector'),
-                    ),
-                  ),
-                  Expanded(
-                    child: InspectorPanel(
-                      selection: _selection,
-                      registry: _registry,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

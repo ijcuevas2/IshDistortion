@@ -98,6 +98,7 @@ class StencilDefinition {
       ..blockId = instanceId
       ..blockLabel = label ?? defaultLabel
       ..blockParams = effectiveParams
-      ..blockPorts = [for (final p in ports) p.toJson()];
+      ..blockPorts = [for (final p in ports) p.toJson()]
+      ..blockDirectFeedthrough = directFeedthrough;
   }
 }

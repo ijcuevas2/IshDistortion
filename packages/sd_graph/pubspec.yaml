@@ -9,6 +9,10 @@ environment:
 resolution: workspace
 
 dependencies:
+  collection: ^1.19.1
+  meta: ^1.19.0
+  sd_document:
+    path: ../sd_document
 
 dev_dependencies:
   lints: ^6.0.0

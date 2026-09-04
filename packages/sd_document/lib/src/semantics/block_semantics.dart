@@ -61,4 +61,16 @@ extension SdBlockSemantics on SdElement {
       value.isEmpty ? null : jsonEncode(value),
     );
   }
+
+  /// Whether this block passes signal through within the same sample
+  /// instant (`sd:directFeedthrough`). Defaults to `true` when absent —
+  /// only a state-holding block (a delay) should ever set this `false`.
+  bool get blockDirectFeedthrough =>
+      getAttribute(SdAttr.directFeedthrough) != 'false';
+
+  set blockDirectFeedthrough(bool value) => setOrRemoveAttribute(
+    this,
+    SdAttr.directFeedthrough,
+    value ? null : 'false',
+  );
 }

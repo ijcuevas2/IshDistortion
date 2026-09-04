@@ -16,6 +16,14 @@ abstract final class SdAttr {
   static final params = SdQName.sd('params');
   static final ports = SdQName.sd('ports');
 
+  /// Whether this block passes signal from input to output within the
+  /// same sample instant — omitted (implicitly `true`) unless `false`, so
+  /// the overwhelmingly common case stays out of native output. Read by
+  /// `sd_graph`'s algebraic-loop detection (§4) — persisted here (not just
+  /// held in a stencil's in-memory definition) so a reopened document is
+  /// still analyzable without its original stencil registry.
+  static final directFeedthrough = SdQName.sd('directFeedthrough');
+
   // Edge dual-representation (§3) — see the doc comment on
   // `SdEdgeSemantics` for why this is an attribute, not a separate element.
   static final edge = SdQName.sd('edge');

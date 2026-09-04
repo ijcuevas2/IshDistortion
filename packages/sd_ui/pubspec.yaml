@@ -14,6 +14,8 @@ dependencies:
     sdk: flutter
   sd_document:
     path: ../sd_document
+  sd_graph:
+    path: ../sd_graph
   sd_render:
     path: ../sd_render
   sd_stencils:
