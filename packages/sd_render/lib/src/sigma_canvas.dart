@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:sd_commands/sd_commands.dart';
 import 'package:sd_document/sd_document.dart';
 import 'package:sd_ink/sd_ink.dart';
+import 'package:sd_input/sd_input.dart';
 
 import 'geometry/svg_transform.dart';
 import 'grid_painter.dart';
@@ -106,6 +107,25 @@ class SigmaCanvasState extends State<SigmaCanvas> {
   SigmaViewport viewport = const SigmaViewport();
 
   _DragMode _dragMode = _DragMode.none;
+
+  /// The `PointerEvent.pointer` id driving the current [_dragMode], or
+  /// `null` when none is active. This canvas's drag state (move/scale/
+  /// marquee/connect/ink) is a single global state machine, not one per
+  /// simultaneous pointer — realistic for a desktop-first app where only
+  /// one hand drags at a time, but a second pointer arriving mid-drag
+  /// (a stylus writing while the other hand's palm also touches down) is
+  /// a real scenario once ink is involved. Every handler below ignores
+  /// any event whose `pointer` doesn't match this, so a second pointer
+  /// can never clobber the first's in-progress `_dragMode`/`_inkPoints`/
+  /// etc. — see the palm-rejection tests in `ink_tool_test.dart` for the
+  /// bug this fixes. This does *not* make simultaneous multi-pointer
+  /// drags work correctly in general — it only prevents a second,
+  /// ignored pointer from corrupting the first's state — and it resolves
+  /// ties by whichever pointer went down *first*, so a stylus that goes
+  /// down *after* an already-dragging touch is itself ignored rather
+  /// than preempting it, unlike the reverse order (§7 palm rejection, as
+  /// implemented, only correctly covers "stylus first, then palm").
+  int? _dragPointer;
   Offset _dragStartScreen = Offset.zero;
   Offset _lastScreen = Offset.zero;
   Rect? _marqueeScreen;
@@ -115,6 +135,11 @@ class SigmaCanvasState extends State<SigmaCanvas> {
   PortHandle? _connectStart;
   Offset? _connectCurrentScreen;
   final List<StrokePoint> _inkPoints = [];
+
+  /// §7's palm-rejection state — fed every pointer event this canvas sees
+  /// (down/move/up/cancel/hover), regardless of tool or drag mode, so it
+  /// stays accurate even while, say, the select tool is active.
+  final PalmRejectionFilter _palmRejection = PalmRejectionFilter();
 
   @override
   void initState() {
@@ -159,6 +184,10 @@ class SigmaCanvasState extends State<SigmaCanvas> {
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerUp,
       onPointerSignal: _onPointerSignal,
+      // Proximity (§7): a stylus hovering, not yet down, still counts as
+      // "active" for palm rejection — this is the only handler that
+      // exists purely to feed _palmRejection; it drives no drag mode.
+      onPointerHover: _palmRejection.onPointerEvent,
       child: SizedBox.expand(
         child: Stack(
           children: [
@@ -221,6 +250,11 @@ class SigmaCanvasState extends State<SigmaCanvas> {
   }
 
   void _onPointerDown(PointerDownEvent event) {
+    _palmRejection.onPointerEvent(event);
+    if (_dragPointer != null && _dragPointer != event.pointer) {
+      return; // a different pointer already owns the active gesture.
+    }
+    _dragPointer = event.pointer;
     _dragStartScreen = event.localPosition;
     _lastScreen = event.localPosition;
 
@@ -234,9 +268,31 @@ class SigmaCanvasState extends State<SigmaCanvas> {
     }
 
     if (widget.tool == CanvasTool.ink) {
+      if (!_palmRejection.shouldInk(event.kind)) {
+        // Palm rejection (§7): a touch while a stylus is active pans
+        // instead of inking, rather than being silently swallowed. Only
+        // reachable while the stylus is merely *hovering* (not yet its
+        // own `_dragPointer`) — once it's actually down and dragging,
+        // the reentrancy guard above already returned before this line,
+        // so a touch arriving *then* is ignored outright rather than
+        // panning (seeing this pointer's later move/up events at all
+        // would require tracking it independently of the stylus's own
+        // drag, which nothing here does — see `_dragPointer`'s doc
+        // comment).
+        _dragMode = _DragMode.pan;
+        return;
+      }
+      final sample = _sampleFrom(event);
+      if (!hasInkablePressure(sample.pressure)) {
+        // Xournal++'s defensive rule (§7): never trust the input system —
+        // a reported-zero pressure (e.g. a mis-flagged hover) never
+        // starts a stroke.
+        _dragMode = _DragMode.none;
+        return;
+      }
       _dragMode = _DragMode.ink;
       _inkPoints.clear();
-      setState(() => _inkPoints.add(_sampleFrom(event)));
+      setState(() => _inkPoints.add(sample));
       return;
     }
 
@@ -301,6 +357,8 @@ class SigmaCanvasState extends State<SigmaCanvas> {
   }
 
   void _onPointerMove(PointerMoveEvent event) {
+    _palmRejection.onPointerEvent(event);
+    if (_dragPointer != null && event.pointer != _dragPointer) return;
     final screenDelta = event.localPosition - _lastScreen;
     _lastScreen = event.localPosition;
 
@@ -350,19 +408,20 @@ class SigmaCanvasState extends State<SigmaCanvas> {
   }
 
   /// Converts a raw pointer event into a document-space [StrokePoint]
-  /// (§6/§7). Pressure is only ever read from an actual stylus — a mouse
-  /// or touch pointer reports a constant, meaningless `1.0` for
-  /// [PointerEvent.pressure] rather than genuinely having none, so
-  /// passing that straight through would defeat [InkStroke]'s own
-  /// speed-based pressure *inference* for exactly the pressureless
-  /// devices that fallback exists for; `null` here is what tells it "this
-  /// sample has no real pressure, infer one" (§7's device classification
-  /// — full palm-rejection/proximity handling is `sd_input`'s job, not
-  /// built into this canvas).
+  /// (§6/§7), using `sd_input`'s [classifyDevice] to decide whether to
+  /// trust its pressure at all: a mouse or touch pointer reports a
+  /// constant, meaningless `1.0` for [PointerEvent.pressure] rather than
+  /// genuinely having none, so passing that straight through would defeat
+  /// [InkStroke]'s own speed-based pressure *inference* for exactly the
+  /// pressureless devices that fallback exists for — `null` here is what
+  /// tells it "this sample has no real pressure, infer one". Palm
+  /// rejection and the "only ink on positive pressure" rule are applied
+  /// at the call site (see [_onPointerDown]'s ink-tool branch), not here
+  /// — this just does the unit conversion.
   StrokePoint _sampleFrom(PointerEvent event) {
+    final role = classifyDevice(event);
     final hasRealPressure =
-        event.kind == PointerDeviceKind.stylus ||
-        event.kind == PointerDeviceKind.invertedStylus;
+        role == DeviceRole.pen || role == DeviceRole.penEraser;
     final docPoint = viewport.screenToDocument(event.localPosition);
     return StrokePoint(
       x: docPoint.dx,
@@ -373,6 +432,8 @@ class SigmaCanvasState extends State<SigmaCanvas> {
   }
 
   void _onPointerUp(PointerEvent event) {
+    _palmRejection.onPointerEvent(event);
+    if (_dragPointer != null && event.pointer != _dragPointer) return;
     if (_dragMode == _DragMode.marquee && _marqueeScreen != null) {
       final hits = hitTestRect(
         scene.spatialIndex,
@@ -397,6 +458,7 @@ class SigmaCanvasState extends State<SigmaCanvas> {
       _inkPoints.clear();
     });
     _dragMode = _DragMode.none;
+    _dragPointer = null;
     _activeHandle = null;
     _scaleAnchorDocBounds = null;
     _dragStartLocalTransforms.clear();

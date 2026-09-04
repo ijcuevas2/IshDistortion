@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sd_commands/sd_commands.dart';
@@ -165,4 +166,61 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'a touch pans instead of inking while a stylus is actively down (palm rejection)',
+    (tester) async {
+      final doc = createBlankSdDocument();
+      await tester.pumpWidget(_harness(doc));
+
+      // The stylus goes down first, as if the user is actively writing.
+      final stylus = await tester.startGesture(
+        const Offset(50, 50),
+        kind: PointerDeviceKind.stylus,
+      );
+      await tester.pump();
+
+      // While it's still down, a second pointer — the resting palm,
+      // registering as an ordinary touch — starts elsewhere and drags.
+      final touch = await tester.startGesture(
+        const Offset(200, 100),
+        kind: PointerDeviceKind.touch,
+      );
+      await touch.moveTo(const Offset(260, 160));
+      await tester.pump();
+      await touch.up();
+      await tester.pump();
+
+      await stylus.up();
+      await tester.pump();
+
+      // Exactly one stroke: the stylus's own (a lone tap, since it never
+      // moved). The touch's drag must not have become a second one.
+      expect(
+        doc.root.descendantElements.where((e) => e.strokeId != null),
+        hasLength(1),
+      );
+    },
+  );
+
+  testWidgets('the same touch drag inks normally when no stylus is active', (
+    tester,
+  ) async {
+    final doc = createBlankSdDocument();
+    await tester.pumpWidget(_harness(doc));
+
+    final touch = await tester.startGesture(
+      const Offset(200, 100),
+      kind: PointerDeviceKind.touch,
+    );
+    await touch.moveTo(const Offset(260, 160));
+    await tester.pump();
+    await touch.up();
+    await tester.pump();
+
+    expect(
+      doc.root.descendantElements.where((e) => e.strokeId != null),
+      hasLength(1),
+    );
+  });
 }

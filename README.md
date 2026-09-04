@@ -180,24 +180,49 @@ Built and verified so far (each gate below is green — see "Build & test"):
   the same Undo button a placed stencil would use.
   Not implemented: the Kalman/Krita "pulled string" stabilizers,
   Schneider curve fitting, velocity-based width modulation, tilt-shaped
-  nibs, erasers beyond whole-stroke delete (not even wired to a UI
+  nibs, and erasers beyond whole-stroke delete (not even wired to a UI
   gesture yet — only proven via `RemoveChildCommand` in `sd_commands`'s
-  own tests), and all of §7/`sd_input` (device classification beyond
-  "is this literally a stylus", palm rejection, the 5 native plugins —
-  this sandbox can only build the Linux desktop target anyway).
+  own tests).
+- **§7 — device classification and palm rejection.** The new
+  `packages/sd_input`: `classifyDevice` (pen/pen-eraser/touch/mouse,
+  straight off Flutter's own `PointerEvent.kind` — nothing platform-
+  specific is needed for this part), `PalmRejectionFilter` ("while a
+  stylus is in proximity/down, route touch to pan/zoom only" — tracked
+  across every simultaneous pointer, not just one, and by *proximity*
+  via `onPointerHover`, not just by being fully down), and
+  `hasInkablePressure` (Xournal++'s "never trust the input system; only
+  ink on positive pressure"). Wired into `SigmaCanvas`'s ink tool in
+  place of the ad hoc stylus check it had before. Finding this actually
+  worth wiring up (rather than just unit-testing `sd_input` in
+  isolation) surfaced a real bug: `SigmaCanvas`'s drag state
+  (`_dragMode`/`_inkPoints`/...) was a single global state machine with
+  no notion of *which* pointer owned it, so a second, simultaneous
+  pointer (exactly what a resting palm is, next to an active stylus)
+  silently clobbered the first's in-progress stroke — a real widget
+  test simulating both at once caught it. Fixed with a `_dragPointer`
+  id guard (every handler now ignores events from any pointer other
+  than whichever one is driving the current drag) — see the
+  architecture-decisions note on its one known remaining limitation
+  (ordering: stylus-then-palm is handled, palm-then-stylus isn't). 19
+  new tests in `sd_input`, 2 more in `sd_render` (the palm-rejection
+  scenario itself, both orderings).
+  Not implemented: the 5 native pen plugins (`PenSample` streams,
+  capability-query channels, and each platform's own pressure/tilt/
+  twist/eraser API) — this sandbox can only build/run the Linux desktop
+  target anyway, and even Linux's own pen support (libinput/XInput2/
+  Wayland tablet_v2) is real native-code work on its own — nor
+  coalesced/predicted point history or a "Pen status" capability UI.
 
-**Next, if this continues**: Ribbon UI (5), the 5 native pen plugins +
-`sd_input`'s device-classification/palm-rejection layer (6/7), the rest
-of vector export — PDF/PNG/EPS/print (10) —, and polish (11) are all
-**not started**, and §5.5/§5.7/§5.8/§5.11 remain thin and Phase 9's
-equation-editor UI is missing (previous bullets). Given the true scope
-of §0-§15 (a production, cross-platform, multi-native-plugin app),
-these were not attempted in the interest of not shipping shallow/fake
-versions of them — see "What's not built" below.
+**Next, if this continues**: Ribbon UI (5), the 5 native pen plugins
+(6/7), the rest of vector export — PDF/PNG/EPS/print (10) —, and polish
+(11) are all **not started**, and §5.5/§5.7/§5.8/§5.11 remain thin and
+Phase 9's equation-editor UI is missing (previous bullets). Given the
+true scope of §0-§15 (a production, cross-platform, multi-native-plugin
+app), these were not attempted in the interest of not shipping
+shallow/fake versions of them — see "What's not built" below.
 
-`packages/sd_input` is still an empty scaffold (a `library;` stub, no
-`test/`), and `plugins/sd_pen_*` are placeholder READMEs — see each one
-for what it'll need to become.
+`plugins/sd_pen_*` are placeholder READMEs — see each one for what
+it'll need to become.
 
 ## What's not built (be honest about scope)
 
@@ -211,17 +236,15 @@ faked. Concretely still missing:
 
 - **Ribbon UI (§10, Phase 5).** The app is a plain `Row` of panels, not
   the tabbed/contextual ribbon with galleries and dialog launchers.
-- **The rest of ink/pen (§6-§7, Phase 6) and all 5 native plugins.** The
-  stroke model, pressure/speed pipeline, and outline geometry exist and
-  are wired into a real (if minimal) draw tool (see above) — what's
-  missing is `sd_input`'s device-classification/palm-rejection layer
-  (today the canvas only checks "is `PointerEvent.kind` literally a
-  stylus", nothing about proximity/palm/eraser-tip) and every
-  `plugins/sd_pen_{windows,macos,linux,android,ios}` native plugin —
-  this sandbox can only build/run the Linux desktop target anyway, so
-  the other 4 couldn't have been compiled or tested here even if
-  written, and Linux's own pen support (§7: libinput/XInput2/
-  wayland tablet_v2) is a real native-code undertaking on its own.
+- **All 5 native pen plugins (§6-§7, Phase 6).** The stroke model,
+  pressure/speed pipeline, outline geometry, device classification, and
+  palm rejection all exist and are wired into a real (if minimal) draw
+  tool (see above) — what's missing is every
+  `plugins/sd_pen_{windows,macos,linux,android,ios}` native plugin
+  itself. This sandbox can only build/run the Linux desktop target
+  anyway, so the other 4 couldn't have been compiled or tested here
+  even if written, and Linux's own pen support (§7: libinput/XInput2/
+  Wayland tablet_v2) is a real native-code undertaking on its own.
 - **The rest of §5.5/§5.7/§5.8/§5.11 (Phase 7).** §5.5's FIR/biquad/
   cascade are generated (see above) but lattice/parallel/wave-digital/
   comb/CIC/state-space forms aren't; §5.7 (comms/modulation — mixer,
@@ -261,7 +284,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR/biquad/cascade generators
 /packages/sd_render        # ✅ Phase 2 (+connectors) — scene, pan/zoom, selection, port-to-port wiring
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
-/packages/sd_input         # empty — Phase 6/7 (device classification, palm rejection)
+/packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
 /packages/sd_ui            # 🚧 Phase 3+4 (partial) — palette/tree/inspector/problems/H(z); ribbon in 5
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
 /packages/sd_export        # ✅ Phase 10 (partial) — TikZ export, pdflatex-verified; PDF/PNG/EPS/print pending
@@ -411,6 +434,23 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   equally well for two tools, but naming it as an enum now means adding
   a third tool later (once the ribbon exists) touches one `switch`, not
   a second boolean flag interacting with the first.
+- **`SigmaCanvas`'s drag state gained a `_dragPointer` id guard —
+  discovered necessary, not designed in from the start.** Wiring
+  `sd_input` in for real (rather than only unit-testing it in
+  isolation) meant writing a widget test with a stylus and a touch
+  pointer active at once, which exposed a real bug: `_dragMode`/
+  `_inkPoints`/etc. were a single global state machine with no notion
+  of *which* pointer owned them, so a second simultaneous pointer (a
+  resting palm, next to an active stylus) silently overwrote the
+  first's in-progress stroke. Every handler now ignores events from any
+  pointer other than whichever one is driving the current drag. This
+  is a targeted fix, not general multi-pointer support: it only
+  prevents a second, ignored pointer from corrupting the first's state,
+  and resolves ties by whichever pointer went down *first* — a stylus
+  going down *after* an already-dragging touch is itself ignored
+  rather than preempting it, unlike the reverse (and much more
+  realistic — a hovering stylus is normally sensed before the hand's
+  palm makes contact) ordering, which does work correctly.
 
 ## Build & test
 
