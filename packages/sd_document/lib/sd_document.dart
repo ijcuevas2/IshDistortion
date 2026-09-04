@@ -10,6 +10,7 @@
 library;
 
 export 'src/blank_document.dart';
+export 'src/clone.dart';
 export 'src/document_tree.dart';
 export 'src/namespaces.dart';
 export 'src/qname.dart';

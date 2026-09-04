@@ -15,9 +15,11 @@ import 'package:sd_ui/sd_ui.dart';
 /// [InspectorPanel] / [ProblemsPanel] / [TransferFunctionPanel] /
 /// [PoleZeroPanel], sharing one [SelectionModel] and one [UndoStack]
 /// (§2/§12 — every mutation those pieces make routes through it, undoable
-/// via the app bar's buttons or Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y) — in a plain
-/// [Row] layout standing in for the dockable-panel ribbon shell that
-/// Phase 5 will build.
+/// via the app bar's buttons or Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y). The app bar
+/// also gained §10's Home-tab "Clipboard" group in miniature — Copy/
+/// Paste/Delete buttons and Ctrl+C/Ctrl+V/Delete/Backspace, all routed
+/// through the same [UndoStack] — in a plain [Row] layout standing in
+/// for the dockable-panel ribbon shell that Phase 5 will build.
 void main() {
   runApp(const SigmaDrawApp());
 }
@@ -48,6 +50,7 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
   final _registry = StencilRegistry.builtIn();
   final _selection = SelectionModel();
   final _undoStack = UndoStack();
+  final _clipboard = SdClipboard();
   late final SdDocument _document;
   late final DocumentListenable _documentListenable;
 
@@ -85,6 +88,27 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
     if (_undoStack.canRedo) setState(_undoStack.redo);
   }
 
+  void _delete() {
+    setState(
+      () => deleteSelection(_selection, _document, undoStack: _undoStack),
+    );
+  }
+
+  void _copy() {
+    copySelectionToClipboard(_clipboard, _selection);
+  }
+
+  void _paste() {
+    setState(
+      () => pasteFromClipboard(
+        _clipboard,
+        _document,
+        _selection,
+        undoStack: _undoStack,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return CallbackShortcuts(
@@ -96,6 +120,10 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
           shift: true,
         ): _redo,
         const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
+        const SingleActivator(LogicalKeyboardKey.delete): _delete,
+        const SingleActivator(LogicalKeyboardKey.backspace): _delete,
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copy,
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true): _paste,
       },
       child: Focus(
         autofocus: true,
@@ -140,6 +168,28 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
                       ? 'Redo ${_undoStack.redoDescription}'
                       : 'Redo',
                   onPressed: _undoStack.canRedo ? _redo : null,
+                ),
+              ),
+              const SizedBox(width: 8),
+              ListenableBuilder(
+                listenable: _selection,
+                builder: (context, _) => IconButton(
+                  icon: const Icon(Icons.content_copy),
+                  tooltip: 'Copy',
+                  onPressed: _selection.isEmpty ? null : _copy,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.content_paste),
+                tooltip: 'Paste',
+                onPressed: _paste,
+              ),
+              ListenableBuilder(
+                listenable: _selection,
+                builder: (context, _) => IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Delete',
+                  onPressed: _selection.isEmpty ? null : _delete,
                 ),
               ),
               const SizedBox(width: 8),

@@ -147,9 +147,9 @@ Built and verified so far (each gate below is green — see "Build & test"):
   widget tests (drag a block, undo via the button; place a stencil, undo
   via the keyboard). 38 new tests (27 in the new `sd_commands`, 4 in
   `sd_render`, 3 in `sd_ui`, 3 in the app). Not implemented: wiring
-  ElementTree/ProblemsPanel-triggered edits (none exist yet), a
-  delete/backspace command (no delete UI exists yet either), and
-  disk-backed persistence of the history across a document reload.
+  ElementTree/ProblemsPanel-triggered edits (neither mutates the
+  document) and disk-backed persistence of the history across a
+  document reload — delete followed later, see below.
 - **Phase 6 (partial) — the ink pipeline, and an actual "draw with the
   mouse" tool.** `packages/sd_ink` (pure Dart): a real §6 pipeline —
   speed-based pressure inference (an atan sigmoid — slower reads as
@@ -241,6 +241,34 @@ Built and verified so far (each gate below is green — see "Build & test"):
   Not implemented: the rest of §5.11's analysis plots (Bode, Nyquist,
   spectrogram, ...) and hierarchical/subsystem-aware analysis (the
   same scope cut Mason's formula itself already documents).
+- **§10's Home-tab "Clipboard" group, in miniature — Delete/Copy/
+  Paste.** `sd_document` gained `cloneNode` (a generic deep, fully-
+  detached clone of any node — the foundation copy/paste needs, since
+  an `SdElement` is mutable and parented, so paste can't just reuse the
+  original object). `sd_render` gained `deleteSelection` (an undoable
+  transaction that also deletes every edge attached to a deleted
+  *block*, so deleting one doesn't leave dangling wires for
+  `sd_graph`'s validation to merely report as a separate problem),
+  `SdClipboard` (an in-memory clipboard — nothing OS-level, nothing
+  persists across a restart), and `copySelectionToClipboard`/
+  `pasteFromClipboard` (paste mints a fresh id for each pasted block/
+  edge to avoid colliding with the target document, and offsets the
+  paste so it doesn't land exactly on top of what was copied — edge
+  connectivity *between* copied elements isn't preserved, a documented
+  scope cut: the common "duplicate one block" case doesn't need it).
+  Wired into the app bar (Delete/Copy/Paste buttons, gated on whether
+  anything is selected) and the keyboard (Delete/Backspace/Ctrl+C/
+  Ctrl+V), all routed through the same `UndoStack`. A real widget test
+  caught a genuine gap while verifying this: undoing a delete restores
+  the *document* but not the prior *selection* (there's no way for
+  `UndoStack` to know what a command affected without `SdCommand`
+  exposing that, which nothing needs badly enough yet to add) — the
+  test now asserts that documented behavior instead of the wrong
+  assumption it started from. 25 new tests (8 `sd_document`, 13
+  `sd_render`, 4 the app).
+  Not implemented: reaching the OS clipboard (so paste can't cross
+  into/out of another application), and preserving wiring when copying
+  more than one connected block at once.
 
 **Next, if this continues**: Ribbon UI (5), the 5 native pen plugins
 (6/7), the rest of vector export — PDF/PNG/EPS/print (10) —, the rest
