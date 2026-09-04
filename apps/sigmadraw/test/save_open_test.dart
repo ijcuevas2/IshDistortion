@@ -121,4 +121,41 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'Export Plain SVG writes a real, sd:*-stripped copy of the document',
+    (tester) async {
+      // Unlike the PDF/EPS/PNG export dialogs' own widget_test.dart
+      // reachability tests, this one safely taps the dialog's own real
+      // Export button: writeSdDocument is plain, synchronous dart:io —
+      // no Isolate.run or dart:ui rendering in the way (see
+      // ExportPdfDialog.exportPdf's/ExportPngDialog's own doc comments
+      // on why *those* dialogs avoid it).
+      final tempDir = Directory.systemTemp.createTempSync(
+        'sigmadraw-save-open-test-',
+      );
+      addTearDown(() => tempDir.deleteSync(recursive: true));
+      final path = '${tempDir.path}/diagram-plain.svg';
+
+      await tester.pumpWidget(const SigmaDrawApp());
+      await _placeAGain(tester);
+
+      await tester.tap(find.text('Export'));
+      await tester.pump();
+      await tester.tap(find.text('SVG'));
+      await tester.pumpAndSettle();
+      await tester.enterText(_dialogPathField(), path);
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Export'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(ExportSvgDialog), findsNothing);
+      final written = File(path).readAsStringSync();
+      expect(written.contains('sd:'), isFalse);
+      // Still real, visually-meaningful content (the gain stencil's own
+      // triangle), not an empty shell once sd:* is stripped.
+      expect(written.contains('<polygon'), isTrue);
+    },
+  );
 }

@@ -757,6 +757,24 @@ Built and verified so far (each gate below is green — see "Build & test"):
   here worked" signal). 3 new `sd_graph` tests for the fix itself, 5
   new `Expr.freeSymbols` tests, 11 new `sd_render` tests, 16 new
   `sd_ui` tests, 3 new app tests.
+- **Phase 1/11 — plain SVG export, closing a gap that turned out to be
+  UI-only.** `sd_document`'s own `writeSdDocument(..., mode:
+  SdSaveMode.plain)` — which strips every `sd:*` attribute for a
+  portable file any SVG tool can open, mirroring Inkscape's own "Plain
+  SVG" export — already existed and was already tested three times
+  over (`svg_round_trip_test.dart` et al.), from Phase 1; the "not
+  built" gap this README had been carrying was only ever the ribbon
+  entry point. `sd_ui`'s new `ExportSvgDialog` is a near-identical
+  sibling of `SaveDocumentDialog` (same plain-synchronous-write shape,
+  so the same "no `Isolate.run`, no injectable seam needed" reasoning
+  applies) calling `SdSaveMode.plain` instead of the default
+  `SdSaveMode.native`. Wired as a third "SVG" action in the Export
+  ribbon's Vector group, next to PDF/EPS. Because writing plain SVG
+  needs no external process, this is also the *first* export dialog
+  whose own app-level test safely taps its real Export button end to
+  end (`save_open_test.dart`, alongside Save/Open) rather than only
+  confirming the dialog opens the way PDF/EPS/PNG's own app tests are
+  limited to. 5 new `sd_ui` tests, 1 new app test.
 
 **Next, if this continues**: the 5 native pen plugins (6/7) and print
 export (10) are all **not started**; §5.5's wave-digital form remains
@@ -858,12 +876,12 @@ faked. Concretely still missing:
   triangle, `x[n]`/`y[n]`-on-edge, ...) beyond what a stencil already
   renders itself, and the optional experimental WASM-TeX fallback.
 - **The rest of vector/raster export (§11, Phase 10): print dialogs.**
-  TikZ, PDF, EPS, and PNG export are all done, and PDF/EPS/PNG each
-  have a ribbon UI entry point (see above) — SVG native/plain export
-  (Phase 1) and TikZ still don't have one (TikZ's own output is meant
-  to be pasted into a LaTeX document, so a file-save dialog isn't
-  obviously the right UI for it anyway; SVG's is a smaller, real gap).
-  There's also no real native file-save picker anywhere yet — every
+  TikZ, PDF, EPS, PNG, and now plain SVG export are all done, and all
+  but TikZ have a ribbon UI entry point (see above) — TikZ's own
+  output is meant to be pasted into a LaTeX document, so a file-save
+  dialog isn't obviously the right UI for it anyway, unlike SVG's,
+  which turned out to be a real (if small, UI-only) gap. There's also
+  no real native file-save picker anywhere yet — every
   export/save/open path that needs one uses a plain text field for the
   path instead.
 - **Polish (§11, Phase 11)**: autosave, templates, dark mode, i18n,
@@ -884,7 +902,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, 9/11) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram/group-delay/impulse-step/root-locus painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
-/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF/EPS/PNG-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode/Nyquist/spectrogram
+/packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF/EPS/PNG/SVG-export dialogs, palette/tree/inspector/problems + 9/11 §5.11 plot panels
 /packages/sd_latex         # ✅ Phase 9 — flutter_math_fork on-screen + pdflatex/dvisvgm desktop pipeline
 /packages/sd_export        # ✅ Phase 10 (partial) — TikZ+PDF+EPS+PNG export (PDF/EPS/PNG have ribbon UI entry points); print pending
 /packages/sd_commands      # ✅ undo/redo + transactions (no phase owns it alone; needed by 2+) — wired into sd_render+sd_ui+app

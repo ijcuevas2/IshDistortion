@@ -1,7 +1,7 @@
 /// Ribbon, panels, element tree, inspector, palette, and status bar for
 /// SigmaDraw (§10). Scope so far: a data-driven [Ribbon] (tabs of titled
 /// action groups — Home's File/Clipboard/Undo/Tools/Zoom, Insert's
-/// Equation, Export's PDF/EPS/PNG), dialogs wiring document open/save
+/// Equation, Export's PDF/EPS/PNG/plain-SVG), dialogs wiring document open/save
 /// and `sd_latex`'s/`sd_export`'s compile pipelines to the document for
 /// the first time, the stencil palette (search + drag), a drop-to-
 /// place-and-connect-and-draw canvas wrapper, the element tree, the
@@ -20,6 +20,7 @@ export 'src/element_tree.dart';
 export 'src/export_eps_dialog.dart';
 export 'src/export_pdf_dialog.dart';
 export 'src/export_png_dialog.dart';
+export 'src/export_svg_dialog.dart';
 export 'src/group_delay_panel.dart';
 export 'src/impulse_step_panel.dart';
 export 'src/insert_latex_dialog.dart';

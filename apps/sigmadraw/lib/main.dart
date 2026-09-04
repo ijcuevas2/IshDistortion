@@ -206,6 +206,17 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
     }
   }
 
+  Future<void> _exportSvg() async {
+    final path = await showDialog<String>(
+      context: context,
+      builder: (_) => ExportSvgDialog(document: _document),
+    );
+    if (path != null && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Exported to $path')));
+    }
+  }
+
   /// The ribbon's Home tab: Clipboard/Undo/Tools/Zoom groups. Rebuilt from
   /// inside a [ListenableBuilder] merging every model an action's enabled
   /// state depends on, so e.g. "Undo" reads disabled the instant
@@ -352,6 +363,12 @@ class _SigmaDrawHomeState extends State<SigmaDrawHome> {
             label: 'EPS',
             tooltip: 'Export this diagram to EPS',
             onPressed: _exportEps,
+          ),
+          RibbonAction(
+            icon: Icons.data_object,
+            label: 'SVG',
+            tooltip: 'Export a plain, portable SVG (strips SigmaDraw data)',
+            onPressed: _exportSvg,
           ),
         ],
       ),
