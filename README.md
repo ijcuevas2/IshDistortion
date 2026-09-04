@@ -509,7 +509,7 @@ Built and verified so far (each gate below is green — see "Build & test"):
   `sd_export` tests (real, compiling end-to-end, checking an actual
   non-degenerate bounding box — not just "a file came out"), 7 new
   `sd_ui` tests, 1 new app test.
-- **Phase 7/11 — the spectrogram plot, closing out §5.11 entirely.**
+- **Phase 7/11 — the spectrogram plot.**
   Unlike pole-zero/Bode/Nyquist (all three only ever evaluate `H(z)`
   itself, symbolically or at points), a spectrogram is fundamentally a
   property of a *signal* — so `sd_graph` gained
@@ -535,8 +535,14 @@ Built and verified so far (each gate below is green — see "Build & test"):
   reuses `bodeAxisRange` for its own dB range rather than a second
   near-identical implementation); `sd_ui`'s new `SpectrogramPanel`
   mirrors `BodePanel`/`NyquistPanel`'s message-state pattern exactly.
-  Wired as the app's 8th tab — §5.11's "Analysis Plot" section (pole-
-  zero, Bode, Nyquist, spectrogram) now has every plot it names built.
+  Wired as the app's 8th tab. Correction to earlier wording in this
+  section: §5.11 actually names 11 plots (pole-zero, magnitude, phase,
+  group delay, impulse/step stem, spectrogram, constellation, eye
+  diagram, Bode, Nyquist, root locus) — Bode's own two panes cover
+  magnitude+phase, so this and the three bullets above it *do* cover
+  6 of the 11, but "closes out §5.11 entirely" (as an earlier draft of
+  this bullet claimed) was wrong; see "What's not built" for the
+  other 5, addressed in later checkpoints where noted.
   18 new `sd_graph` tests, 10 new `sd_render` tests, 5 new `sd_ui`
   tests, 1 new app test.
 - **Phase 7 — four more §5.5 filter structures.** `sd_stencils` gained
@@ -714,7 +720,7 @@ faked. Concretely still missing:
   anyway, so the other 4 couldn't have been compiled or tested here
   even if written, and Linux's own pen support (§7: libinput/XInput2/
   Wayland tablet_v2) is a real native-code undertaking on its own.
-- **The rest of §5.5/§5.7/§5.8 (Phase 7); §5.11 is now fully done.**
+- **The rest of §5.5/§5.7/§5.8/§5.11 (Phase 7).**
   §5.5's FIR direct/transposed-direct/lattice, biquad DF2T/DF-I/DF-II,
   biquad cascade/parallel, comb, allpass, CIC, the coupled/normalized
   (all-pole, then pole-and-zero) lattice, and state-space (A,B,C,D)
@@ -748,13 +754,21 @@ faked. Concretely still missing:
   agnostic `StencilPalette`/`StencilCanvasArea` — confirmed by
   `extended_stencils_test.dart`'s own registry-inclusion check, not
   just assumed.
-  §5.11's
-  "Analysis Plot" section (pole-zero, Bode, Nyquist, and now
-  spectrogram — see above) has every plot it names built — at the time
-  the bullet above this one was written, only the spectrogram was still
-  missing; that landed in a later checkpoint. None of the filter
-  generators have a palette/drag-to-canvas entry point yet either —
-  they're called directly (as the tests do); wiring one into
+  §5.11's "Analysis Plot" section actually names 11 plots, not 4 — a
+  miscounting error in this README's own earlier drafts, corrected
+  here: pole-zero, magnitude, phase, group delay, impulse/step stem,
+  spectrogram, constellation, eye diagram, Bode, Nyquist, and root
+  locus. `computeBodePlot`'s two panes cover magnitude+phase, so
+  pole-zero/Bode/Nyquist/spectrogram (see above) cover 6 of the 11 —
+  group delay, impulse/step response, and root locus are addressed in
+  a later checkpoint if this session continues far enough (all three
+  are mechanically tractable reusing existing infrastructure); a
+  constellation *plot* and an eye diagram both need a symbol-level
+  modulation/timing simulation harness this project doesn't have,
+  likely a genuinely different shape of problem again, the same kind
+  of finding wave-digital's own investigation above surfaced. None of
+  the filter generators have a palette/drag-to-canvas entry point yet
+  either — they're called directly (as the tests do); wiring one into
   `StencilPalette`/`StencilCanvasArea` (which only knows single-block
   `StencilDefinition`s, not multi-element `FilterStructure`s) is
   unstarted UI work.
@@ -786,9 +800,9 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 ```
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
-/packages/sd_graph         # ✅ Phase 4+8+5.11 (done) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram
+/packages/sd_graph         # ✅ Phase 4+8+5.11 (6/11 plots) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram
 /packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1-4,6,7,8,9,10 leaf stencils + §5.5 nearly complete (FIR/IIR/lattice/comb/allpass/CIC/state-space; only wave-digital left) generators
-/packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, done) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram painters
+/packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, 6/11) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
 /packages/sd_ui            # ✅ Phase 3+4+5 — Ribbon (Home/Insert/Export), save/open+equation+PDF/EPS/PNG-export dialogs, palette/tree/inspector/problems/H(z)/pole-zero/Bode/Nyquist/spectrogram
