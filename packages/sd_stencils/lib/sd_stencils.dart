@@ -6,9 +6,15 @@
 /// (composite/macro stencils like tapped-delay-line land in Phase 7).
 library;
 
+export 'src/control.dart';
+export 'src/edge_builder.dart';
+export 'src/filter_templates.dart';
 export 'src/geometry.dart';
+export 'src/hardware.dart';
 export 'src/markers.dart';
 export 'src/port_spec.dart';
 export 'src/primitives.dart';
+export 'src/quantization.dart';
 export 'src/registry.dart';
 export 'src/stencil_definition.dart';
+export 'src/transforms.dart';

@@ -1,5 +1,9 @@
+import 'control.dart';
+import 'hardware.dart';
 import 'primitives.dart';
+import 'quantization.dart';
 import 'stencil_definition.dart';
+import 'transforms.dart';
 
 /// Lookup/search over the stencil catalog — the model behind `sd_ui`'s
 /// stencil palette (§10: "searchable, categorized; drag-to-canvas").
@@ -7,8 +11,19 @@ class StencilRegistry {
   StencilRegistry(Iterable<StencilDefinition> stencils)
     : _byId = {for (final s in stencils) s.id: s};
 
-  /// The default registry: every built-in stencil this package ships.
-  factory StencilRegistry.builtIn() => StencilRegistry(corePrimitiveStencils);
+  /// The default registry: every built-in stencil this package ships —
+  /// §5.1-5.3 (Phase 3) plus §5.4/§5.6/§5.9/§5.10's leaf stencils (Phase
+  /// 7). §5.5's filter *structures* are composite generators, not single
+  /// stencils — see `filter_templates.dart`. §5.7 (comms/modulation),
+  /// §5.8 (adaptive/statistical), and §5.11 (analysis-plot objects) are
+  /// not implemented.
+  factory StencilRegistry.builtIn() => StencilRegistry([
+    ...corePrimitiveStencils,
+    ...quantizationStencils,
+    ...controlStencils,
+    ...hardwareStencils,
+    ...transformStencils,
+  ]);
 
   final Map<String, StencilDefinition> _byId;
 

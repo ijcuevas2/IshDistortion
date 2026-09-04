@@ -14,4 +14,6 @@ dependencies:
 
 dev_dependencies:
   lints: ^6.0.0
+  sd_graph:
+    path: ../sd_graph
   test: ^1.25.6

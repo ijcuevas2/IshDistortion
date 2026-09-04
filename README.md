@@ -66,12 +66,30 @@ Built and verified so far (each gate below is green — see "Build & test"):
   `Block.isSubsystem`, not built), pole-zero generation, and treating a
   multirate block as anything but unity gain in H(z) — all documented in
   code comments at the point they matter.
+- **Phase 7 (partial) — more of the stencil library.** `sd_stencils`
+  gained §5.4 (quantizer/ADC/DAC/saturation/rounding/dither), §5.6
+  (FFT/IFFT, bit-reversal, a 2-in/2-out radix-2 butterfly — the first
+  multi-output stencil, with a documented Mason-analysis caveat where
+  that matters), §5.9 (plant/controller/integrator/differentiator), and
+  §5.10 (MAC/accumulator/register/mux/demux/ROM/systolic cell). More
+  significantly, §5.5's filter *structures* are implemented as composite
+  generators (`buildFirDirectForm`, `buildBiquadDf2t`,
+  `buildBiquadCascade`) that place and wire a whole subgraph of Phase 3
+  primitives — `buildBiquadDf2t` is the exact topology verified against
+  Mason's formula above, now packaged as one call. All three generators'
+  output is verified against `sd_graph`'s Mason engine: FIR against
+  `Σcᵢ·z⁻ⁱ`, the biquad against the textbook DF2T `H(z)`, and the cascade
+  against the product of its sections' individual `H(z)` — for several
+  coefficient sets and evaluation points each. Not implemented: §5.7
+  (comms/modulation), §5.8 (adaptive/statistical), §5.11 (analysis-plot
+  objects), and the rest of §5.5 (lattice/parallel/wave-digital/comb/CIC,
+  state-space). 33 new tests.
 
 **Next, if this continues**: Ribbon UI (5), ink/pen input + 5 native
-plugins (6), the rest of the stencil library (7), LaTeX (9), vector
-export (10), and polish (11) are all **not started**. Given the true
-scope of §0-§15 (a production, cross-platform, multi-native-plugin app),
-these were not attempted in this session in the interest of not
+plugins (6), LaTeX (9), vector export (10), and polish (11) are all
+**not started**, and §5.5/§5.7/§5.8/§5.11 remain thin (previous bullet).
+Given the true scope of §0-§15 (a production, cross-platform, multi-
+native-plugin app), these were not attempted in the interest of not
 shipping shallow/fake versions of them — see "What's not built" below.
 
 `packages/sd_ink`, `sd_input`, `sd_latex`, `sd_export`, and `sd_commands`
@@ -97,12 +115,17 @@ faked. Concretely still missing:
   this sandbox can only build/run the Linux desktop target anyway, so
   the other 4 plugins couldn't have been compiled or tested here even
   if written.
-- **§5.4-§5.11's remaining ~65 stencils (Phase 7)**: quantization,
-  filter-structure templates (incl. a literal "biquad" composite you
-  could drag onto the canvas — today you wire one from primitives, as
-  the test above does), transforms, comms/modulation, adaptive filters,
-  control-system blocks, hardware blocks, and analysis-plot objects
-  (pole-zero, Bode, etc.).
+- **The rest of §5.5/§5.7/§5.8/§5.11 (Phase 7).** §5.5's FIR/biquad/
+  cascade are generated (see above) but lattice/parallel/wave-digital/
+  comb/CIC/state-space forms aren't; §5.7 (comms/modulation — mixer,
+  NCO, PLL, Costas loop, ...), §5.8 (adaptive/statistical — LMS/RLS,
+  ...), and §5.11 (analysis-plot objects — pole-zero, Bode, Nyquist,
+  spectrogram, ...) are entirely unimplemented. None of the filter
+  generators have a palette/drag-to-canvas entry point yet either —
+  they're called directly (as the tests do); wiring one into
+  `StencilPalette`/`StencilCanvasArea` (which only knows single-block
+  `StencilDefinition`s, not multi-element `FilterStructure`s) is
+  unstarted UI work.
 - **LaTeX (§11, Phase 9)**, **vector PDF/EPS/TikZ export and printing**
   (§11, Phase 10) — Phase 1's SVG native/plain export is the only export
   path that exists.
@@ -120,7 +143,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
 /packages/sd_graph         # ✅ Phase 4+8 — semantic graph, validation, Tarjan, Mason, rate/netlist
-/packages/sd_stencils      # ✅ Phase 3 (core) — DSP symbol library, §5.1-5.3; §5.4-5.11 in Phase 7
+/packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR/biquad/cascade generators
 /packages/sd_render        # ✅ Phase 2 (+connectors) — scene, pan/zoom, selection, port-to-port wiring
 /packages/sd_ink           # empty — Phase 6 (stroke model, pressure curves)
 /packages/sd_input         # empty — Phase 6 (pointer/pen pipeline)

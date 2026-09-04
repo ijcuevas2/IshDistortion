@@ -34,6 +34,23 @@ void main() {
             reason: '${stencil.id} child ${child.name.local}',
           );
         }
+
+        // Every port must lie within the stencil's own declared footprint
+        // — catches e.g. a custom `width` override whose `ports` weren't
+        // updated to match (see extended_stencils_test.dart's doc comment
+        // on the systolic-cell bug this pattern caught in Phase 7).
+        for (final port in stencil.ports) {
+          expect(
+            port.x,
+            inInclusiveRange(0, stencil.width),
+            reason: '${stencil.id}:${port.id} x',
+          );
+          expect(
+            port.y,
+            inInclusiveRange(0, stencil.height),
+            reason: '${stencil.id}:${port.id} y',
+          );
+        }
       });
     }
   });
