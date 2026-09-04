@@ -344,6 +344,290 @@ FilterStructure buildFirLattice({
   );
 }
 
+/// §5.5: IIR, all-pole ("coupled"/normalized-lattice-family) lattice —
+/// the feedback dual of [buildFirLattice]: the same per-stage two-
+/// multiplier relationship (`f_m = f_{m-1} + k_m·g_{m-1}[n-1]`, `g_m =
+/// k_m·f_{m-1} + g_{m-1}[n-1]`), but run in reverse — the external
+/// input is injected as `f_p[n]` (the *top* stage, `p =
+/// reflectionCoefficients.length`) and the output is taken at `f_0[n]`
+/// (the *bottom* stage, the same base case `f_0 = g_0` the FIR lattice
+/// uses) — realizing `H(z) = 1/A_p(z)`, where `A_p` is exactly the same
+/// polynomial [buildFirLattice] realizes directly as its own `H(z)`
+/// (see that function's own doc comment/test for its closed form for
+/// small `p`).
+///
+/// Each stage solves its own `f`-equation for `f_{m-1}` given `f_m`
+/// (`f_{m-1} = f_m - k_m·g_{m-1}[n-1]`) rather than computing `f_m`
+/// from `f_{m-1}` forward — this is the standard "invert one lattice
+/// section" step: `g_{m-1}[n-1]` is already sitting in a delay
+/// register (from stage `m-1`'s own `g` output, one sample old), so
+/// solving for `f_{m-1}` needs nothing not already available. Built
+/// top-down (`stage = p, p-1, .. 1`), which means each stage's own `g`-
+/// delay register is created *before* its source (`g_{stage}`,
+/// produced by the *next* iteration down) exists — the same
+/// "construction order isn't signal-flow order" pattern
+/// [buildIirDirectFormI]/[buildIirDirectFormII] already use for their
+/// own feedback taps.
+FilterStructure buildAllPoleLattice({
+  required String idPrefix,
+  required List<num> reflectionCoefficients,
+  double x = 0,
+  double y = 0,
+}) {
+  final stages = _buildAllPoleLatticeStages(
+    idPrefix: idPrefix,
+    reflectionCoefficients: reflectionCoefficients,
+    x: x,
+    y: y,
+  );
+  final (f0Block, f0Port) = stages.fTaps[0];
+  return FilterStructure(
+    elements: stages.elements,
+    inputBlockId: stages.tapId,
+    inputPortId: 'in1',
+    outputBlockId: f0Block,
+    outputPortId: f0Port,
+  );
+}
+
+/// The shared core of [buildAllPoleLattice] and
+/// [buildLatticeLadderFilter]: builds the all-pole lattice's stages and
+/// returns every stage's own forward (`f_m`) tap, not just the final
+/// `f_0` [buildAllPoleLattice] alone needs — [buildLatticeLadderFilter]
+/// reads every one of them for its own ladder path. Not private to
+/// [buildAllPoleLattice]'s own use for the same reason `svgUnitsPerCm`
+/// and `compileTexToPdfInDirectory` elsewhere in this project aren't
+/// private to their own first caller.
+({List<SdElement> elements, String tapId, List<(String, String)> fTaps})
+_buildAllPoleLatticeStages({
+  required String idPrefix,
+  required List<num> reflectionCoefficients,
+  required double x,
+  required double y,
+}) {
+  if (reflectionCoefficients.isEmpty) {
+    throw ArgumentError.value(
+      reflectionCoefficients,
+      'reflectionCoefficients',
+      'must not be empty',
+    );
+  }
+  final elements = <SdElement>[];
+  var seq = 0;
+  String nextId(String kind) => '$idPrefix-$kind${seq++}';
+  void wire(String from, String fromPort, String to, String toPort) =>
+      elements.add(
+        buildEdge(
+          id: nextId('e'),
+          fromBlock: from,
+          fromPort: fromPort,
+          toBlock: to,
+          toPort: toPort,
+        ),
+      );
+
+  final p = reflectionCoefficients.length;
+  final tapId = nextId('tap');
+  elements.add(
+    pickoffNode.instantiate(instanceId: tapId, x: x, y: y + 2 * _stageDy),
+  );
+
+  // fTaps[m] is f_m's own (blockId, portId), filled in from p down to
+  // 0 below — the fill value already covers fTaps[p] = f_p[n] = x[n].
+  final fTaps = List<(String, String)>.filled(p + 1, (tapId, 'out1'));
+
+  var fBlock = tapId;
+  var fPort = 'out1';
+  String? pendingDelayId; // a higher stage's own g-delay, awaiting its
+  // source (this stage's own g output) — null only before the first
+  // iteration, when there is no higher stage to feed.
+
+  for (var stage = p; stage >= 1; stage--) {
+    final k = reflectionCoefficients[stage - 1];
+    final label = 'k$stage';
+    final stageX = x + (p - stage + 1) * _stageDx;
+
+    // g_{stage-1}[n-1] — this stage's own delayed backward tap.
+    final gDelay = nextId('d');
+    elements.add(
+      delay.instantiate(instanceId: gDelay, x: stageX, y: y + 4 * _stageDy),
+    );
+
+    final kGain1 = nextId('g'); // k_stage * g_{stage-1}[n-1]
+    elements.add(
+      gain.instantiate(
+        instanceId: kGain1,
+        x: stageX,
+        y: y,
+        params: {'gain': k},
+        label: label,
+      ),
+    );
+    wire(gDelay, 'out1', kGain1, 'in1');
+
+    // f_{stage-1} = f_stage - k_stage*g_{stage-1}[n-1] (solving the FIR
+    // lattice's own f-equation for the "previous" f, given the
+    // "current" one).
+    final fSub = nextId('add');
+    elements.add(
+      adder.instantiate(
+        instanceId: fSub,
+        x: stageX + _stageDx,
+        y: y,
+        params: {
+          'signs': ['+', '-'],
+        },
+      ),
+    );
+    wire(fBlock, fPort, fSub, 'in1');
+    wire(kGain1, 'out1', fSub, 'in2');
+
+    final kGain2 = nextId('g'); // k_stage * f_{stage-1}
+    elements.add(
+      gain.instantiate(
+        instanceId: kGain2,
+        x: stageX,
+        y: y + 4 * _stageDy,
+        params: {'gain': k},
+        label: label,
+      ),
+    );
+    wire(fSub, 'out1', kGain2, 'in1');
+
+    // g_stage = k_stage*f_{stage-1} + g_{stage-1}[n-1] — same formula
+    // as buildFirLattice's own g-equation.
+    final gAdd = nextId('add');
+    elements.add(
+      adder.instantiate(
+        instanceId: gAdd,
+        x: stageX + _stageDx,
+        y: y + 4 * _stageDy,
+      ),
+    );
+    wire(kGain2, 'out1', gAdd, 'in1');
+    wire(gDelay, 'out1', gAdd, 'in2');
+
+    // `gAdd` (= g_stage) is exactly what the previous (higher)
+    // iteration's own delay register was waiting for.
+    if (pendingDelayId != null) {
+      wire(gAdd, 'out1', pendingDelayId, 'in1');
+    }
+
+    if (stage == 1) {
+      // Base case: g_0[n] = f_0[n] identically — `gDelay`'s own source
+      // is THIS stage's f_{stage-1} (= fSub), already known.
+      wire(fSub, 'out1', gDelay, 'in1');
+      pendingDelayId = null;
+    } else {
+      // `gDelay` (representing g_{stage-1}) is sourced by
+      // g_{stage-1}[n], produced by the *next* iteration's own `gAdd`.
+      pendingDelayId = gDelay;
+    }
+
+    fBlock = fSub;
+    fPort = 'out1';
+    fTaps[stage - 1] = (fBlock, fPort);
+  }
+
+  return (elements: elements, tapId: tapId, fTaps: fTaps);
+}
+
+/// §5.5: IIR, lattice-ladder ("coupled"/normalized lattice) — extends
+/// [buildAllPoleLattice] with a second, "ladder" path: every stage's
+/// own forward signal `f_m` (`m = 0..p`) is tapped by its own ladder
+/// coefficient `c_m` ([ladderCoefficients]) and all `p+1` taps are
+/// summed into the output, `y[n] = Σ c_m·f_m[n]`, rather than
+/// [buildAllPoleLattice]'s output being `f_0` alone. This is the
+/// standard Gray-Markel structure for realizing a GENERAL (pole-*and*-
+/// zero) IIR system from an all-pole lattice core: the reflection
+/// coefficients [reflectionCoefficients] alone only ever place poles
+/// (see [buildAllPoleLattice]) — the ladder taps are what place zeros.
+///
+/// Verified (see this function's own test) by deriving `H(z)` fresh
+/// via z-domain substitution for `p=1` and `p=2`, reusing
+/// [buildAllPoleLattice]'s own already-independently-verified `F_m/X`
+/// relationships for each stage rather than trusting a textbook
+/// numerator-coefficient formula from memory.
+FilterStructure buildLatticeLadderFilter({
+  required String idPrefix,
+  required List<num> reflectionCoefficients,
+  required List<num> ladderCoefficients,
+  double x = 0,
+  double y = 0,
+}) {
+  if (ladderCoefficients.length != reflectionCoefficients.length + 1) {
+    throw ArgumentError(
+      'ladderCoefficients must have exactly one more entry than '
+      'reflectionCoefficients (c_0..c_p, for p = '
+      'reflectionCoefficients.length) — got ladderCoefficients.length='
+      '${ladderCoefficients.length}, reflectionCoefficients.length='
+      '${reflectionCoefficients.length}',
+    );
+  }
+  final stages = _buildAllPoleLatticeStages(
+    idPrefix: idPrefix,
+    reflectionCoefficients: reflectionCoefficients,
+    x: x,
+    y: y,
+  );
+  final elements = stages.elements;
+  var seq = 0;
+  String nextId(String kind) => '$idPrefix-ladder-$kind${seq++}';
+  void wire(String from, String fromPort, String to, String toPort) =>
+      elements.add(
+        buildEdge(
+          id: nextId('e'),
+          fromBlock: from,
+          fromPort: fromPort,
+          toBlock: to,
+          toPort: toPort,
+        ),
+      );
+
+  final ladderX = x + (stages.fTaps.length + 1) * _stageDx;
+  final tapGains = <String>[];
+  for (var m = 0; m < stages.fTaps.length; m++) {
+    final (fBlock, fPort) = stages.fTaps[m];
+    final g = nextId('g');
+    elements.add(
+      gain.instantiate(
+        instanceId: g,
+        x: ladderX,
+        y: y + m * _stageDy,
+        params: {'gain': ladderCoefficients[m]},
+        label: 'c$m',
+      ),
+    );
+    wire(fBlock, fPort, g, 'in1');
+    tapGains.add(g);
+  }
+
+  var accId = tapGains[0];
+  var accPort = 'out1';
+  for (var i = 1; i < tapGains.length; i++) {
+    final addId = nextId('add');
+    elements.add(
+      adder.instantiate(
+        instanceId: addId,
+        x: ladderX + _stageDx,
+        y: y + i * _stageDy,
+      ),
+    );
+    wire(accId, accPort, addId, 'in1');
+    wire(tapGains[i], 'out1', addId, 'in2');
+    accId = addId;
+    accPort = 'out1';
+  }
+
+  return FilterStructure(
+    elements: elements,
+    inputBlockId: stages.tapId,
+    inputPortId: 'in1',
+    outputBlockId: accId,
+    outputPortId: accPort,
+  );
+}
+
 /// §5.5: IIR, Direct Form II Transposed biquad — the exact topology
 /// verified against Mason's gain formula in `sd_graph`'s test suite
 /// (`mason_test.dart`'s biquad case):

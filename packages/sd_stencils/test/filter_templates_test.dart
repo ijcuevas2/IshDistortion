@@ -234,6 +234,180 @@ void main() {
     });
   });
 
+  group('buildAllPoleLattice', () {
+    test('produces a graph with no algebraic loop', () {
+      final structure = buildAllPoleLattice(
+        idPrefix: 'apl',
+        reflectionCoefficients: [0.5, -0.3, 0.2],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      expect(detectAlgebraicLoops(SignalGraph.fromDocument(doc)), isEmpty);
+    });
+
+    test('a single stage realizes H(z) = 1 / (1 + k1*z^-1) — the '
+        'feedback dual of buildFirLattice\'s own single-stage case', () {
+      const k1 = 0.4;
+      final structure = buildAllPoleLattice(
+        idPrefix: 'apl',
+        reflectionCoefficients: [k1],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      for (final z in [2.0, 5.0, -3.0, 0.5]) {
+        final expected = 1 / (1 + k1 * _powInv(z, 1));
+        expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+      }
+    });
+
+    test('two stages realize H(z) = 1 / (1 + k1*(1+k2)*z^-1 + k2*z^-2) — '
+        'the reciprocal of buildFirLattice\'s own two-stage H(z)', () {
+      const k1 = 0.4, k2 = -0.25;
+      final structure = buildAllPoleLattice(
+        idPrefix: 'apl',
+        reflectionCoefficients: [k1, k2],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      for (final z in [2.0, 5.0, -3.0, 0.5]) {
+        final zInv = _powInv(z, 1);
+        final expected = 1 / (1 + k1 * (1 + k2) * zInv + k2 * zInv * zInv);
+        expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+      }
+    });
+
+    test('three stages match the reciprocal of the hand-derived cubic '
+        'denominator', () {
+      const k1 = 0.4, k2 = -0.25, k3 = 0.1;
+      final structure = buildAllPoleLattice(
+        idPrefix: 'apl',
+        reflectionCoefficients: [k1, k2, k3],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      // Same closed form buildFirLattice's own test independently
+      // derives (a_m = a_{m-1} + k_m*z^-1*b_{m-1}, b_m = k_m*a_{m-1} +
+      // z^-1*b_{m-1}, a_0=b_0=1) — the all-pole lattice's H(z) is that
+      // polynomial's reciprocal, not a second derivation.
+      const c0 = 1.0;
+      const c1 = k1 * (1 + k2) + k2 * k3;
+      const c2 = k2 + k1 * k3 * (1 + k2);
+      const c3 = k3;
+
+      for (final z in [2.0, 5.0, -3.0, 0.5]) {
+        final zInv = _powInv(z, 1);
+        final denominator =
+            c0 + c1 * zInv + c2 * zInv * zInv + c3 * zInv * zInv * zInv;
+        expect(result.h.evaluate({}, z: z), closeTo(1 / denominator, 1e-9));
+      }
+    });
+
+    test('rejects an empty reflection-coefficient list', () {
+      expect(
+        () => buildAllPoleLattice(idPrefix: 'x', reflectionCoefficients: []),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('buildLatticeLadderFilter', () {
+    test('produces a graph with no algebraic loop', () {
+      final structure = buildLatticeLadderFilter(
+        idPrefix: 'll',
+        reflectionCoefficients: [0.5, -0.3],
+        ladderCoefficients: [0.2, 0.4, -0.1],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      expect(detectAlgebraicLoops(SignalGraph.fromDocument(doc)), isEmpty);
+    });
+
+    test('with only c0 nonzero, reduces to exactly buildAllPoleLattice '
+        "(y[n] = 1*f_0[n] + 0*(everything else) = f_0[n])", () {
+      const k = [0.4, -0.25];
+      final ladder = buildLatticeLadderFilter(
+        idPrefix: 'll',
+        reflectionCoefficients: k,
+        ladderCoefficients: [1, 0, 0],
+      );
+      final allPole = buildAllPoleLattice(
+        idPrefix: 'ap',
+        reflectionCoefficients: k,
+      );
+      final ladderResult = computeTransferFunction(
+        SignalGraph.fromDocument(_wrapWithSourceSink(ladder)),
+      )!;
+      final allPoleResult = computeTransferFunction(
+        SignalGraph.fromDocument(_wrapWithSourceSink(allPole)),
+      )!;
+
+      for (final z in [2.0, 5.0, -3.0, 0.5]) {
+        expect(
+          ladderResult.h.evaluate({}, z: z),
+          closeTo(allPoleResult.h.evaluate({}, z: z), 1e-9),
+        );
+      }
+    });
+
+    test('p=1 matches H(z) = ((c0+c1) + c1*k1*z^-1) / (1+k1*z^-1) — '
+        'derived fresh via z-domain substitution using '
+        "buildAllPoleLattice's own already-verified F0/F1 relationship "
+        '(F1=X, F0=X/(1+k1*z^-1)), not a textbook formula taken on '
+        'faith', () {
+      const k1 = 0.4;
+      const c0 = 0.6, c1 = -0.3;
+      final structure = buildLatticeLadderFilter(
+        idPrefix: 'll',
+        reflectionCoefficients: [k1],
+        ladderCoefficients: [c0, c1],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      for (final z in [2.0, 5.0, -3.0, -2.0]) {
+        final zInv = _powInv(z, 1);
+        final expected = ((c0 + c1) + c1 * k1 * zInv) / (1 + k1 * zInv);
+        expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+      }
+    });
+
+    test('p=2 matches the fresh z-domain derivation using '
+        "buildAllPoleLattice's own already-verified F0/F1/F2 "
+        'relationships', () {
+      const k1 = 0.4, k2 = -0.25;
+      const c0 = 0.6, c1 = -0.3, c2 = 0.2;
+      final structure = buildLatticeLadderFilter(
+        idPrefix: 'll',
+        reflectionCoefficients: [k1, k2],
+        ladderCoefficients: [c0, c1, c2],
+      );
+      final doc = _wrapWithSourceSink(structure);
+      final result = computeTransferFunction(SignalGraph.fromDocument(doc))!;
+
+      for (final z in [2.0, 5.0, -3.0, 0.5]) {
+        final zInv = _powInv(z, 1);
+        // F2/X=1, F1/X=(1+k1*z^-1)/a2(z), F0/X=1/a2(z); Y = c0*F0 +
+        // c1*F1 + c2*F2 = X*[c0 + c1*(1+k1*z^-1) + c2*a2(z)] / a2(z).
+        final a2 = 1 + k1 * (1 + k2) * zInv + k2 * zInv * zInv;
+        final numerator = c0 + c1 * (1 + k1 * zInv) + c2 * a2;
+        final expected = numerator / a2;
+        expect(result.h.evaluate({}, z: z), closeTo(expected, 1e-9));
+      }
+    });
+
+    test('rejects a ladderCoefficients length mismatch', () {
+      expect(
+        () => buildLatticeLadderFilter(
+          idPrefix: 'x',
+          reflectionCoefficients: [0.5, -0.3],
+          ladderCoefficients: [0.2, 0.4],
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('buildIirDirectFormI', () {
     test('produces a graph with no algebraic loop', () {
       final structure = buildIirDirectFormI(

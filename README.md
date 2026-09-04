@@ -598,10 +598,38 @@ Built and verified so far (each gate below is green — see "Build & test"):
   correctly-wired, loop-free diagram) without claiming an `H(z)` this
   project's Mason engine can't actually give. 13 new `sd_stencils`
   tests.
+- **Phase 7 — the coupled/normalized (all-pole, then pole-*and*-zero)
+  lattice, closing out §5.5's lattice family.** `buildAllPoleLattice`
+  is the feedback dual of `buildFirLattice`: the *same* per-stage two-
+  multiplier relationship, run in reverse (input injected at the top
+  stage `f_p`, output taken at the bottom `f_0`), realizing `H(z) =
+  1/A_p(z)` for exactly the same `A_p` polynomial `buildFirLattice`
+  realizes directly. Each stage solves its own forward equation for
+  `f_{m-1}` given `f_m` (the standard "invert one lattice section"
+  step); verified for `p`=1, 2, and 3 against the *reciprocal* of
+  `buildFirLattice`'s own already-independently-derived closed forms.
+  `buildLatticeLadderFilter` then extends it with a second "ladder"
+  path — every stage's own `f_m` tapped by its own coefficient and
+  summed into the output — the standard Gray-Markel structure for
+  realizing a general pole-*and*-zero IIR system from an all-pole
+  lattice core (reflection coefficients alone only ever place poles).
+  Verified three ways: a `p`=1 and a `p`=2 case, each derived *fresh*
+  via z-domain substitution reusing `buildAllPoleLattice`'s own
+  already-verified per-stage `F_m/X` relationships (not a textbook
+  numerator-coefficient formula taken on faith); and that zeroing
+  every ladder coefficient except `c_0=1` reduces it to exactly
+  `buildAllPoleLattice`'s own `H(z)`. Refactored `buildAllPoleLattice`
+  to share its stage-building core with the new function (returning
+  every stage's own `f_m` tap, not just `f_0`) — the same "make the
+  shared step non-private, document why" pattern `svgUnitsPerCm`
+  established. §5.5's lattice family (FIR direct/transposed/lattice,
+  IIR all-pole/pole-zero lattice) is now complete — only wave-digital
+  and state-space (A,B,C,D) remain from all of §5.5. 10 new
+  `sd_stencils` tests (90 → 100).
 
 **Next, if this continues**: the 5 native pen plugins (6/7) and print
-export (10) are all **not started**; §5.5's wave-digital/coupled-
-lattice/state-space forms, §5.7, and §5.8 remain thin/
+export (10) are all **not started**; §5.5's wave-digital/state-space
+forms, §5.7, and §5.8 remain thin/
 unstarted.
 Given the true scope of §0-§15 (a
 production, cross-platform, multi-native-plugin app), these were not
@@ -640,13 +668,14 @@ faked. Concretely still missing:
   Wayland tablet_v2) is a real native-code undertaking on its own.
 - **The rest of §5.5/§5.7/§5.8 (Phase 7); §5.11 is now fully done.**
   §5.5's FIR direct/transposed-direct/lattice, biquad DF2T/DF-I/DF-II,
-  biquad cascade/parallel, comb, allpass, and CIC are all generated
-  (see above) — only wave-digital, coupled/normalized lattice, and
-  state-space (A,B,C,D) forms remain unbuilt (all three are a
-  genuinely different shape of problem than every generator built so
-  far: wave-digital filters are built from adaptors, not this
-  project's gain/delay/adder primitives; state-space is naturally
-  matrix-parameterized, not a fixed handful of scalar coefficients).
+  biquad cascade/parallel, comb, allpass, CIC, and the coupled/
+  normalized (all-pole, then pole-and-zero) lattice are all generated
+  (see above) — only wave-digital and state-space (A,B,C,D) forms
+  remain unbuilt from §5.5 (both are a genuinely different shape of
+  problem than every generator built so far: wave-digital filters are
+  built from adaptors, not this project's gain/delay/adder primitives;
+  state-space is naturally matrix-parameterized, not a fixed handful
+  of scalar coefficients).
   §5.7 (comms/modulation — mixer, NCO, PLL, Costas loop, ...) and §5.8
   (adaptive/statistical — LMS/RLS, ...) are entirely unimplemented.
   §5.11's
@@ -688,7 +717,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
 /packages/sd_graph         # ✅ Phase 4+8+5.11 (done) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram
-/packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR (direct/transposed/lattice) + IIR (DF-I/II/DF2T/cascade/parallel) + comb/allpass/CIC generators
+/packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1,2,3,4,6,9,10 + FIR/IIR direct/transposed/DF-I/II/DF2T/cascade/parallel + lattice (FIR, all-pole, pole-zero) + comb/allpass/CIC generators
 /packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, done) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool
 /packages/sd_input         # ✅ Phase 7 (partial) — device classification, palm rejection; 5 native plugins pending
@@ -1148,6 +1177,22 @@ Matches `sigmadraw-implementation-prompt.md` §2:
   `gainCoefficient`, not by prefixing the whole file's `primitives.dart`
   import (which every other generator in the file already relies on
   staying unprefixed).
+- **`buildLatticeLadderFilter`'s tests derive its expected `H(z)` fresh
+  by hand for `p`=1 and `p`=2, rather than encoding a remembered
+  Gray-Markel numerator-coefficient formula.** The relationship
+  between a lattice-ladder's own ladder coefficients and the resulting
+  numerator polynomial is one of the less commonly-restated results in
+  DSP texts, and getting it wrong from memory — then "verifying" it
+  against a test that encodes the *same* wrong memory — would look
+  identical to getting it right, right up until the wiring reused
+  elsewhere disagreed. Substituting `buildAllPoleLattice`'s own
+  already-independently-verified per-stage `F_m/X` relationships
+  directly into `Y = Σ c_m·F_m` and simplifying by hand for small `p`
+  produces a formula this project can actually trust — the same
+  standard this project has applied to every hand-derived expected
+  value so far (the biquad DF2T's textbook `H(z)`, the FIR lattice's
+  own closed forms, ...), just harder to skip here since no textbook
+  formula was sitting nearby to (mis)quote instead.
 
 ## Build & test
 
