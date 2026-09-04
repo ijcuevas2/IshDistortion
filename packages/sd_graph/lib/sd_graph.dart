@@ -2,19 +2,21 @@
 /// edges extracted from a document's `sd:*` attributes, validation
 /// (§4/§10's Problems panel), and analysis (§4/§8) — rate propagation,
 /// Tarjan strongly-connected-components-based algebraic-loop detection,
-/// Mason's gain formula for a symbolic transfer function H(z), (§5.11)
-/// pole-zero computation from that H(z) via Durand-Kerner polynomial
-/// root-finding, (§5.11) Bode magnitude/phase and Nyquist complex-plane
-/// plots from the same H(z) evaluated around the unit circle, and
-/// (§5.11) a spectrogram of `H`'s own simulated response to a chirp —
-/// the one §5.11 plot that needs an actual sampled signal rather than
-/// only `H(z)` itself.
+/// Mason's gain formula for a symbolic transfer function H(z), and 7 of
+/// §5.11's 11 named analysis plots computed from that same `H(z)`:
+/// pole-zero (Durand-Kerner polynomial root-finding), Bode (magnitude/
+/// phase) and Nyquist (complex-plane) from `H` evaluated around the
+/// unit circle, group delay (an exact symbolic derivative of `H`'s own
+/// phase, not a finite-difference approximation), root locus (poles
+/// re-found as one still-symbolic coefficient sweeps), and impulse/step
+/// response and a spectrogram — the three plots needing an actual
+/// simulated signal rather than only `H(z)` evaluated at points, via
+/// [simulateDifferenceEquation]. Not implemented: a constellation plot
+/// and an eye diagram, which need a symbol-level modulation/timing
+/// simulation harness this project doesn't have (see README.md).
 ///
 /// Hierarchical/subsystem support is flagged (`Block.isSubsystem`) but not
-/// implemented — see that field's doc comment. Netlist-driven simulation
-/// against an arbitrary, user-authored input signal is not implemented —
-/// [simulateDifferenceEquation] exists but is only driven by
-/// [generateChirp] so far.
+/// implemented — see that field's doc comment.
 library;
 
 export 'src/algebraic_loops.dart';

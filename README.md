@@ -680,6 +680,37 @@ Built and verified so far (each gate below is green — see "Build & test"):
   loop, which already caught a real bug once before — see the
   systolic-cell note in that file — plus targeted checks for the new
   multi-port/multi-input shapes) (106 → 139).
+- **§5.11 — group delay, impulse/step response, and root locus (the
+  three of the section's remaining 5 plots that are mechanically
+  tractable reusing existing infrastructure — see the correction
+  above on why 5, not 0, remained).** `sd_graph` gained
+  `computeGroupDelay` (`tau(omega) = -dphi/domega`), computed via an
+  *exact* symbolic derivative of `H` with respect to `w = z^-1`
+  (`tau = Re[w*H'(w)/H(w)]`, standard complex calculus through the
+  chain rule) rather than a finite-difference approximation of
+  `computeBodePlot`'s own sampled phase, which would only ever be
+  approximately right — verified against hand-derivable exact cases
+  (a pure `k`-sample delay: exactly `tau = k` at every frequency; a
+  pure gain: exactly `0`) *and*, for a biquad, against an
+  independently-implemented fine central-difference computed fresh in
+  the test (not re-deriving the same symbolic formula twice), matching
+  to `1e-3` — real confidence the analytic formula is right, not just
+  self-consistent. `computeImpulseResponse`/`computeStepResponse` are
+  thin, honest wrappers over the already-existing
+  `simulateDifferenceEquation` (an impulse/step response *is*, by
+  definition, that function's own reaction to one specific signal),
+  verified against the exact same hand-computed geometric-decay case
+  `simulateDifferenceEquation`'s own tests use, plus the step
+  response's own closed-form geometric partial sum. `computeRootLocus`
+  is literally `computePoleZero` called once per swept value of one
+  still-symbolic coefficient (the same `bindings` mechanism every
+  other analysis here already resolves symbols through) — no new
+  root-finding logic — verified against a hand-derivable single-pole
+  sweep (`H(z) = 1/(1+k*z^-1)` puts a pole at exactly `z = -k`) and
+  that a *second*, un-swept symbol still correctly returns `null`.
+  Only the `sd_graph` computation layer landed this checkpoint — no
+  painter/panel/app-tab yet for any of the three (see "What's not
+  built"). 20 new `sd_graph` tests (114 → 134).
 
 **Next, if this continues**: the 5 native pen plugins (6/7) and print
 export (10) are all **not started**; §5.5's wave-digital form remains
@@ -759,14 +790,16 @@ faked. Concretely still missing:
   here: pole-zero, magnitude, phase, group delay, impulse/step stem,
   spectrogram, constellation, eye diagram, Bode, Nyquist, and root
   locus. `computeBodePlot`'s two panes cover magnitude+phase, so
-  pole-zero/Bode/Nyquist/spectrogram (see above) cover 6 of the 11 —
-  group delay, impulse/step response, and root locus are addressed in
-  a later checkpoint if this session continues far enough (all three
-  are mechanically tractable reusing existing infrastructure); a
-  constellation *plot* and an eye diagram both need a symbol-level
-  modulation/timing simulation harness this project doesn't have,
-  likely a genuinely different shape of problem again, the same kind
-  of finding wave-digital's own investigation above surfaced. None of
+  pole-zero/Bode/Nyquist/spectrogram/group-delay/impulse-step/root-
+  locus (see above) cover 9 of the 11 at the `sd_graph` computation
+  layer — but only 6 of those 9 (pole-zero/Bode/Nyquist/spectrogram)
+  have a painter, panel, and app tab; group delay/impulse-step/root-
+  locus are computed and tested, not yet rendered anywhere, a real
+  remaining gap, not a subtle one. A constellation *plot* and an eye
+  diagram both need a symbol-level modulation/timing simulation
+  harness this project doesn't have at all, likely a genuinely
+  different shape of problem again, the same kind of finding wave-
+  digital's own investigation above surfaced. None of
   the filter generators have a palette/drag-to-canvas entry point yet
   either — they're called directly (as the tests do); wiring one into
   `StencilPalette`/`StencilCanvasArea` (which only knows single-block
@@ -800,7 +833,7 @@ Matches `sigmadraw-implementation-prompt.md` §2:
 ```
 /apps/sigmadraw            # app shell (Flutter app, all 5 platform folders scaffolded)
 /packages/sd_document      # ✅ Phase 1 — SVG DOM model, sd: namespace round-trip
-/packages/sd_graph         # ✅ Phase 4+8+5.11 (6/11 plots) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram
+/packages/sd_graph         # ✅ Phase 4+8+5.11 (9/11 plots computed; 6/11 have UI) — semantic graph, validation, Tarjan, Mason, rate/netlist, pole-zero/Bode/Nyquist/spectrogram/group-delay/impulse-step/root-locus
 /packages/sd_stencils      # ✅ Phase 3+7 (partial) — §5.1-4,6,7,8,9,10 leaf stencils + §5.5 nearly complete (FIR/IIR/lattice/comb/allpass/CIC/state-space; only wave-digital left) generators
 /packages/sd_render        # ✅ Phase 2 (+connectors, +5.11 plot painters, 6/11) — scene, pan/zoom, selection, port-to-port wiring, pole-zero/Bode/Nyquist/spectrogram painters
 /packages/sd_ink           # ✅ Phase 6 (partial) — stroke model, pressure curves, outline geometry, wired as a canvas tool

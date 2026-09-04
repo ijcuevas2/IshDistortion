@@ -192,3 +192,86 @@ Complex _evaluateZInversePolynomial(Map<int, num> poly, Complex z) {
   }
   return result;
 }
+
+/// One sample of a group-delay plot (§5.11's "Analysis Plot — group
+/// delay").
+class GroupDelayPoint {
+  const GroupDelayPoint({required this.omega, required this.delaySamples});
+
+  /// Normalized angular frequency, radians/sample, in `[0, pi]` — same
+  /// convention as [BodePoint.omega].
+  final double omega;
+
+  /// `-d(arg(H(e^{j*omega})))/d(omega)`, in samples.
+  final double delaySamples;
+}
+
+/// Computes a group-delay plot (§5.11): how many samples' worth of delay
+/// each frequency component experiences, `tau(omega) = -dphi/domega` for
+/// `phi(omega) = arg(H(e^{j*omega}))`.
+///
+/// Computed via an *exact* symbolic derivative of `H` with respect to
+/// `w = z^-1` (not a finite-difference approximation of [computeBodePlot]'s
+/// own sampled phase, which would only ever be approximately right and
+/// need a step-size judgment call): writing `H(w) = N(w)/D(w)` (the same
+/// sparse `z^-1`-power maps [rationalPolynomials] already produces),
+/// standard complex calculus gives
+/// `tau(omega) = Re[w * H'(w) / H(w)]` at `w = e^{-j*omega}` — derived by
+/// differentiating `H = |H|*e^{j*phi}` with respect to `omega` via the
+/// chain rule through `w`, then taking the imaginary part of `H'/H` (see
+/// this function's own test for the by-hand verification: a pure `k`-
+/// sample delay gives exactly `tau = k` at every `omega`, a pure gain
+/// gives exactly `tau = 0`). `H'(w)` itself is the ordinary quotient rule
+/// on `N`/`D`, each differentiated by the ordinary power rule term by
+/// term (`_derivativeZInversePolynomial`).
+///
+/// [bindings]/return-`null` semantics are identical to [computeBodePlot].
+List<GroupDelayPoint>? computeGroupDelay(
+  Expr h, {
+  Map<String, num> bindings = const {},
+  int pointCount = 200,
+}) {
+  if (pointCount < 2) {
+    throw ArgumentError.value(pointCount, 'pointCount', 'must be at least 2');
+  }
+  final rational = rationalPolynomials(h, bindings);
+  if (rational == null) return null;
+  final n = rational.numerator;
+  final d = rational.denominator;
+
+  final points = <GroupDelayPoint>[];
+  for (var i = 0; i < pointCount; i++) {
+    final omega = math.pi * i / (pointCount - 1);
+    final z = Complex(math.cos(omega), math.sin(omega));
+    final w = Complex.one / z;
+
+    final nAtW = _evaluateZInversePolynomial(n, z);
+    final dAtW = _evaluateZInversePolynomial(d, z);
+    final nPrimeAtW = _derivativeZInversePolynomial(n, z);
+    final dPrimeAtW = _derivativeZInversePolynomial(d, z);
+
+    final tau = (w * (nPrimeAtW * dAtW - nAtW * dPrimeAtW) / (dAtW * nAtW)).re;
+    points.add(GroupDelayPoint(omega: omega, delaySamples: tau));
+  }
+  return points;
+}
+
+/// Evaluates the *derivative with respect to `w`* of a `z^-1`-power
+/// sparse polynomial (as [_evaluateZInversePolynomial] evaluates the
+/// polynomial itself) at a concrete complex [z] (`w = 1/z`): the ordinary
+/// power rule, term by term — `d/dw [c_k * w^k] = k * c_k * w^(k-1)`, and
+/// a constant term (`k = 0`) contributes nothing.
+Complex _derivativeZInversePolynomial(Map<int, num> poly, Complex z) {
+  final zInverse = Complex.one / z;
+  var result = Complex.zero;
+  for (final entry in poly.entries) {
+    final k = entry.key;
+    if (k == 0) continue;
+    var zInversePower = Complex.one;
+    for (var i = 0; i < k - 1; i++) {
+      zInversePower = zInversePower * zInverse;
+    }
+    result = result + Complex(entry.value.toDouble() * k) * zInversePower;
+  }
+  return result;
+}

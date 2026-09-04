@@ -82,6 +82,95 @@ void main() {
     );
   });
 
+  group('computeImpulseResponse', () {
+    test('rejects a sampleCount less than 1', () {
+      expect(
+        () => computeImpulseResponse(const ConstExpr(1), sampleCount: 0),
+        throwsArgumentError,
+      );
+    });
+
+    test('a pure gain: c at n=0, zero everywhere after', () {
+      final samples = computeImpulseResponse(
+        const ConstExpr(3),
+        sampleCount: 5,
+      )!;
+      expect(samples.map((s) => s.value), [3, 0, 0, 0, 0]);
+      expect(samples.map((s) => s.n), [0, 1, 2, 3, 4]);
+    });
+
+    test('a pure k-sample delay: a single 1 at n=k, zero elsewhere', () {
+      for (final k in [1, 2, 3]) {
+        final samples = computeImpulseResponse(ZPowExpr(-k), sampleCount: 5)!;
+        for (var n = 0; n < samples.length; n++) {
+          expect(samples[n].value, n == k ? 1 : 0, reason: 'k=$k n=$n');
+        }
+      }
+    });
+
+    test('a one-pole IIR matches the hand-computed geometric decay '
+        '(the same case simulateDifferenceEquation\'s own test uses)', () {
+      final h = divExpr(
+        const ConstExpr(1),
+        addExpr([
+          const ConstExpr(1),
+          mulExpr([const ConstExpr(-0.5), const ZPowExpr(-1)]),
+        ]),
+      );
+      final samples = computeImpulseResponse(h, sampleCount: 5)!;
+      for (var n = 0; n < samples.length; n++) {
+        expect(samples[n].value, closeTo(math.pow(0.5, n).toDouble(), 1e-9));
+      }
+    });
+
+    test(
+      'returns null for a shape that is not a clean rational polynomial',
+      () {
+        final h = addExpr([const ConstExpr(1), const SymbolExpr('unbound')]);
+        expect(computeImpulseResponse(h), isNull);
+      },
+    );
+  });
+
+  group('computeStepResponse', () {
+    test('rejects a sampleCount less than 1', () {
+      expect(
+        () => computeStepResponse(const ConstExpr(1), sampleCount: 0),
+        throwsArgumentError,
+      );
+    });
+
+    test('a pure gain: constant c at every sample', () {
+      final samples = computeStepResponse(const ConstExpr(3), sampleCount: 4)!;
+      expect(samples.map((s) => s.value), [3, 3, 3, 3]);
+    });
+
+    test('a one-pole IIR matches the closed-form geometric partial sum '
+        'y[n] = (1 - a^(n+1)) / (1 - a)', () {
+      const a = 0.5;
+      final h = divExpr(
+        const ConstExpr(1),
+        addExpr([
+          const ConstExpr(1),
+          mulExpr([const ConstExpr(-a), const ZPowExpr(-1)]),
+        ]),
+      );
+      final samples = computeStepResponse(h, sampleCount: 6)!;
+      for (var n = 0; n < samples.length; n++) {
+        final expected = (1 - math.pow(a, n + 1)) / (1 - a);
+        expect(samples[n].value, closeTo(expected.toDouble(), 1e-9));
+      }
+    });
+
+    test(
+      'returns null for a shape that is not a clean rational polynomial',
+      () {
+        final h = addExpr([const ConstExpr(1), const SymbolExpr('unbound')]);
+        expect(computeStepResponse(h), isNull);
+      },
+    );
+  });
+
   group('dft', () {
     test('a DC (constant) signal has energy only at bin 0', () {
       final spectrum = dft(List.filled(8, 2.0));

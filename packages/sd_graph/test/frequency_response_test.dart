@@ -146,4 +146,106 @@ void main() {
       },
     );
   });
+
+  group('computeGroupDelay', () {
+    test('rejects fewer than 2 points', () {
+      expect(
+        () => computeGroupDelay(const ConstExpr(1), pointCount: 1),
+        throwsArgumentError,
+      );
+    });
+
+    test('a pure k-sample delay has constant group delay = k, at every '
+        'frequency', () {
+      for (final k in [1, 2, 3]) {
+        final points = computeGroupDelay(ZPowExpr(-k), pointCount: 20)!;
+        for (final p in points) {
+          expect(p.delaySamples, closeTo(k.toDouble(), 1e-9), reason: 'k=$k');
+        }
+      }
+    });
+
+    test('a pure real gain has zero group delay everywhere', () {
+      final points = computeGroupDelay(const ConstExpr(4), pointCount: 20)!;
+      for (final p in points) {
+        expect(p.delaySamples, closeTo(0, 1e-9));
+      }
+    });
+
+    test('matches an independently-implemented, fine central-difference '
+        'approximation of phase, for a biquad — not re-deriving the same '
+        'symbolic formula twice', () {
+      final graph = buildBiquadGraph(
+        b0: 1,
+        b1: 0.5,
+        b2: 0.2,
+        a1: -0.6,
+        a2: 0.15,
+      );
+      final h = computeTransferFunction(graph)!.h;
+      final analytic = computeGroupDelay(h, pointCount: 50)!;
+      final rational = rationalPolynomials(h, const {})!;
+
+      // arg(H(e^{j*omega})) at one specific omega, computed directly
+      // (no unwrapping needed for a single point) — independent of
+      // computeGroupDelay's own exact symbolic derivative.
+      double phaseRadiansAt(double omega) {
+        num argAt(Map<int, num> poly) {
+          var reSum = 0.0, imSum = 0.0;
+          for (final entry in poly.entries) {
+            final angle = -entry.key * omega;
+            reSum += entry.value * math.cos(angle);
+            imSum += entry.value * math.sin(angle);
+          }
+          return math.atan2(imSum, reSum);
+        }
+
+        return (argAt(rational.numerator) - argAt(rational.denominator))
+            .toDouble();
+      }
+
+      const step = 1e-5;
+      for (final p in analytic) {
+        if (p.omega - step <= 0 || p.omega + step >= math.pi) {
+          continue; // skip the very ends: a central difference here
+          // would need a point outside [0, pi].
+        }
+        var delta =
+            phaseRadiansAt(p.omega + step) - phaseRadiansAt(p.omega - step);
+        while (delta > math.pi) {
+          delta -= 2 * math.pi;
+        }
+        while (delta < -math.pi) {
+          delta += 2 * math.pi;
+        }
+        final finiteDifferenceTau = -delta / (2 * step);
+
+        expect(
+          p.delaySamples,
+          closeTo(finiteDifferenceTau, 1e-3),
+          reason: 'omega=${p.omega}',
+        );
+      }
+    });
+
+    test('resolves bound symbols the same way computePoleZero does', () {
+      final h = divExpr(
+        const ConstExpr(1),
+        addExpr([
+          const ConstExpr(1),
+          mulExpr([const SymbolExpr('k'), const ZPowExpr(-1)]),
+        ]),
+      );
+      expect(computeGroupDelay(h), isNull);
+      expect(computeGroupDelay(h, bindings: {'k': -0.5}), isNotNull);
+    });
+
+    test(
+      'returns null for a shape that is not a clean rational polynomial',
+      () {
+        final h = addExpr([const ConstExpr(1), const SymbolExpr('unbound')]);
+        expect(computeGroupDelay(h), isNull);
+      },
+    );
+  });
 }

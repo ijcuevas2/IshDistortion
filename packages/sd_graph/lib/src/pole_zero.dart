@@ -64,6 +64,68 @@ PoleZeroResult? computePoleZero(
   );
 }
 
+/// One sample of a root-locus plot (§5.11's "Analysis Plot — root
+/// locus"): the pole (and zero) locations at one value of the swept
+/// parameter — root locus conventionally plots pole migration, but
+/// [zeros] costs nothing extra to keep too, since [computePoleZero]
+/// already computes both in one call.
+class RootLocusSample {
+  const RootLocusSample({
+    required this.parameterValue,
+    required this.poles,
+    required this.zeros,
+  });
+
+  final double parameterValue;
+  final List<Complex> poles;
+  final List<Complex> zeros;
+}
+
+/// Computes a root-locus plot (§5.11): how [h]'s own poles (and zeros)
+/// migrate as one still-symbolic coefficient — [parameter], e.g. a
+/// `gain` block left as a symbol rather than a number, the same
+/// mechanism every other analysis in this library already resolves via
+/// [bindings] — is swept from [start] to [end] over [pointCount]
+/// evenly-spaced values. Literally just [computePoleZero], called once
+/// per swept value with [parameter] added to [bindings] for that call —
+/// no new root-finding logic, since sweeping *is* the whole feature
+/// here, not a new way to find roots.
+///
+/// Returns `null` if any swept value's own [computePoleZero] call does
+/// (e.g. a *different*, still-unbound symbol besides [parameter]
+/// remains, or [h]'s shape isn't a clean rational polynomial) — the
+/// same "can't do this specific analysis on this specific H(z)"
+/// non-bug outcome [computePoleZero] itself documents.
+List<RootLocusSample>? computeRootLocus(
+  Expr h, {
+  required String parameter,
+  required double start,
+  required double end,
+  Map<String, num> bindings = const {},
+  int pointCount = 50,
+}) {
+  if (pointCount < 2) {
+    throw ArgumentError.value(pointCount, 'pointCount', 'must be at least 2');
+  }
+  final samples = <RootLocusSample>[];
+  for (var i = 0; i < pointCount; i++) {
+    final value = start + (end - start) * i / (pointCount - 1);
+    final result = computePoleZero(
+      h,
+      bindings: {...bindings, parameter: value},
+    );
+    if (result == null) return null;
+    samples.add(
+      RootLocusSample(
+        parameterValue: value,
+        poles: result.poles,
+        zeros: result.zeros,
+      ),
+    );
+  }
+  return samples;
+}
+
 /// Splits [expr] into numerator/denominator polynomials in `z^-1` (a
 /// sparse power->coefficient map each) — a bare, non-[DivExpr] is treated
 /// as numerator over an implicit denominator of `1` (exactly the shape

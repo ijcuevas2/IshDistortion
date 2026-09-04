@@ -221,4 +221,98 @@ void main() {
       expect(result.poles.single.abs(), closeTo(0, 1e-9));
     });
   });
+
+  group('computeRootLocus', () {
+    test('rejects fewer than 2 points', () {
+      expect(
+        () => computeRootLocus(
+          const ConstExpr(1),
+          parameter: 'k',
+          start: 0,
+          end: 1,
+          pointCount: 1,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('a single real pole migrates exactly along the sweep, for '
+        'H(z) = 1 / (1 + k*z^-1) -> pole at z = -k', () {
+      final h = divExpr(
+        const ConstExpr(1),
+        addExpr([
+          const ConstExpr(1),
+          mulExpr([const SymbolExpr('k'), const ZPowExpr(-1)]),
+        ]),
+      );
+      final samples = computeRootLocus(
+        h,
+        parameter: 'k',
+        start: 0.2,
+        end: 0.8,
+        pointCount: 4,
+      )!;
+      expect(samples, hasLength(4));
+      for (final s in samples) {
+        expect(s.poles, hasLength(1));
+        expect(s.poles.single.re, closeTo(-s.parameterValue, 1e-9));
+        expect(s.poles.single.im, closeTo(0, 1e-9));
+      }
+      expect(samples.first.parameterValue, closeTo(0.2, 1e-12));
+      expect(samples.last.parameterValue, closeTo(0.8, 1e-12));
+    });
+
+    test('sweeps evenly from start to end, inclusive', () {
+      final h = divExpr(
+        const ConstExpr(1),
+        addExpr([
+          const ConstExpr(1),
+          mulExpr([const SymbolExpr('k'), const ZPowExpr(-1)]),
+        ]),
+      );
+      final samples = computeRootLocus(
+        h,
+        parameter: 'k',
+        start: -1,
+        end: 1,
+        pointCount: 5,
+      )!;
+      expect(samples.map((s) => s.parameterValue), [-1, -0.5, 0, 0.5, 1]);
+    });
+
+    test('resolves other, already-bound symbols too, alongside the '
+        'swept one', () {
+      // H(z) = g / (1 + k*z^-1): g is bound directly, k is swept.
+      final h = divExpr(
+        const SymbolExpr('g'),
+        addExpr([
+          const ConstExpr(1),
+          mulExpr([const SymbolExpr('k'), const ZPowExpr(-1)]),
+        ]),
+      );
+      final samples = computeRootLocus(
+        h,
+        parameter: 'k',
+        start: 0.1,
+        end: 0.3,
+        bindings: {'g': 5},
+        pointCount: 3,
+      )!;
+      for (final s in samples) {
+        expect(s.zeros, isEmpty); // constant numerator -> no zeros.
+        expect(s.poles.single.re, closeTo(-s.parameterValue, 1e-9));
+      }
+    });
+
+    test('returns null if a different, still-unbound symbol remains', () {
+      final h = divExpr(
+        const SymbolExpr('g'), // left unbound, unlike the test above.
+        addExpr([
+          const ConstExpr(1),
+          mulExpr([const SymbolExpr('k'), const ZPowExpr(-1)]),
+        ]),
+      );
+      expect(computeRootLocus(h, parameter: 'k', start: 0, end: 1), isNull);
+    });
+  });
 }

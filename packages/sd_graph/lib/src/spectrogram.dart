@@ -58,6 +58,63 @@ List<double>? simulateDifferenceEquation(
   return output;
 }
 
+/// One sample of an impulse- or step-response plot (§5.11's "Analysis
+/// Plot — impulse/step stem" — conventionally drawn as a stem/lollipop
+/// plot, one vertical line per sample, rather than a connected curve).
+class ImpulseResponseSample {
+  const ImpulseResponseSample({required this.n, required this.value});
+
+  /// The sample index.
+  final int n;
+
+  final double value;
+}
+
+/// Computes [h]'s impulse response (§5.11): its output when driven by a
+/// unit impulse (`x[0] = 1`, `x[n] = 0` for `n > 0`) — literally just
+/// [simulateDifferenceEquation] fed that one specific signal, since an
+/// impulse response *is*, by definition, `H(z)`'s own difference
+/// equation's reaction to an impulse. [bindings]/return-`null` semantics
+/// are identical to [simulateDifferenceEquation].
+List<ImpulseResponseSample>? computeImpulseResponse(
+  Expr h, {
+  Map<String, num> bindings = const {},
+  int sampleCount = 50,
+}) {
+  if (sampleCount < 1) {
+    throw ArgumentError.value(sampleCount, 'sampleCount', 'must be at least 1');
+  }
+  final impulse = List<double>.generate(sampleCount, (n) => n == 0 ? 1.0 : 0.0);
+  final response = simulateDifferenceEquation(h, impulse, bindings: bindings);
+  if (response == null) return null;
+  return [
+    for (var n = 0; n < response.length; n++)
+      ImpulseResponseSample(n: n, value: response[n]),
+  ];
+}
+
+/// Computes [h]'s step response (§5.11): its output when driven by a
+/// unit step (`x[n] = 1` for every `n >= 0`) — the same "just feed
+/// [simulateDifferenceEquation] a specific signal" shape as
+/// [computeImpulseResponse], fed a different one. [bindings]/return-
+/// `null` semantics are identical to [simulateDifferenceEquation].
+List<ImpulseResponseSample>? computeStepResponse(
+  Expr h, {
+  Map<String, num> bindings = const {},
+  int sampleCount = 50,
+}) {
+  if (sampleCount < 1) {
+    throw ArgumentError.value(sampleCount, 'sampleCount', 'must be at least 1');
+  }
+  final step = List<double>.filled(sampleCount, 1.0);
+  final response = simulateDifferenceEquation(h, step, bindings: bindings);
+  if (response == null) return null;
+  return [
+    for (var n = 0; n < response.length; n++)
+      ImpulseResponseSample(n: n, value: response[n]),
+  ];
+}
+
 /// Converts a `z^-1`-power sparse map (as [rationalPolynomials] produces)
 /// into a dense array indexed directly by power (`result[k]` is the
 /// coefficient of `z^-k`), zero-filled wherever a power is absent. Unlike
