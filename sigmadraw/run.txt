@@ -1,0 +1,17 @@
+There are two ways to run SigmaDraw, from /home/ismael/prototypes:
+
+1. Development mode (hot reload, live editing) — from the app directory:
+cd apps/sigmadraw
+flutter run -d linux
+
+2. The already-built binary (from this session's own build-linux runs), no rebuild needed:
+./apps/sigmadraw/build/linux/x64/debug/bundle/sigmadraw
+
+Both launch the same Flutter desktop app. If you haven't run melos bootstrap in a while (or packages have changed since your last pull), run that first from the repo root:
+melos bootstrap
+
+A couple of things worth knowing before you click around:
+- It's a debug build, so it's slower to start and shows a debug banner — that's expected, not a bug.
+- Export to PDF/EPS require pdflatex (and EPS also pdftops) on your PATH; without them those specific export actions will fail gracefully with an error message rather than crash.
+- The window opens on the "Elements" tab; the DSP stencil palette is on the left, the canvas in the middle, and the analysis tabs (H(z), Pole-Zero, Bode, Nyquist, Spectrogram, Group Delay, Impulse/Step, Root Locus) are the scrollable tab strip on the right.
+

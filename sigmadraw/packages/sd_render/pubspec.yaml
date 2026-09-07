@@ -1,0 +1,32 @@
+name: sd_render
+description: "Scene/display-list rendering: CustomPainters, spatial index, and hit-testing."
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.2
+  flutter: ">=1.17.0"
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  sd_commands:
+    path: ../sd_commands
+  sd_document:
+    path: ../sd_document
+  sd_graph:
+    path: ../sd_graph
+  sd_ink:
+    path: ../sd_ink
+  sd_input:
+    path: ../sd_input
+  vector_math: ^2.4.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:

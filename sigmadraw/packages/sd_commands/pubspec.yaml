@@ -1,0 +1,17 @@
+name: sd_commands
+description: "Generic command pattern, undo/redo, transactions, and coalescing history."
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.2
+
+resolution: workspace
+
+dependencies:
+  sd_document:
+    path: ../sd_document
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6

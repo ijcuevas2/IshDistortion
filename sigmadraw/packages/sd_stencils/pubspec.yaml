@@ -1,0 +1,19 @@
+name: sd_stencils
+description: "DSP symbol/stencil library: geometry generators, ports, parameters, and semantics."
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.2
+
+resolution: workspace
+
+dependencies:
+  sd_document:
+    path: ../sd_document
+
+dev_dependencies:
+  lints: ^6.0.0
+  sd_graph:
+    path: ../sd_graph
+  test: ^1.25.6
